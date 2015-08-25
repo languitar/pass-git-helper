@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+
+import argparse
+import configparser
+import fnmatch
+import logging
+import os.path
+import subprocess
+import sys
+
+LOGGER = logging.getLogger()
+DEFAULT_MAPPING_FILE = os.path.expanduser('~/.git-pass-mapping')
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description='Git credential helper using pass as the data source.',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument(
+        '-m', '--mapping',
+        type=argparse.FileType('r'),
+        metavar='MAPPING_FILE',
+        default=DEFAULT_MAPPING_FILE,
+        help='A mapping file to be used, specifying how hosts '
+             'map to pass entries.')
+    parser.add_argument(
+        '-l', '--logging',
+        action='store_true',
+        default=False,
+        help='Print debug messages on stderr. '
+             'Might include sensitive information')
+    parser.add_argument(
+        'action',
+        type=str,
+        metavar='ACTION',
+        help='Action to preform as specified in the git credential API')
+
+    args = parser.parse_args()
+
+    return args
+
+
+def parse_mapping(mapping_file):
+    config = configparser.ConfigParser()
+    config.read_file(mapping_file)
+    return config
+
+
+def parse_request():
+    in_lines = sys.stdin.readlines()
+    request = {}
+    for line in in_lines:
+        parts = line.split('=')
+        assert len(parts) == 2
+        request[parts[0].strip()] = parts[1].strip()
+    return request
+
+
+def get_password(request, mapping):
+    if 'host' not in request:
+        LOGGER.error('host= entry missing in request. '
+                     'Cannot query without a host')
+        return
+
+    host = request['host']
+
+    LOGGER.debug('Iterating mapping for to match against host "%s"', host)
+    for section in mapping.sections():
+        if fnmatch.fnmatch(host, section):
+            LOGGER.debug('Section "%s" matches requested host "%s"',
+                         section, host)
+            # TODO handle exceptions
+            pass_target = mapping.get(section, 'target')
+            LOGGER.debug('Requesting entry "%s" from pass', pass_target)
+            output = subprocess.check_output(['pass', 'show', pass_target])
+            lines = output.splitlines()
+            if len(lines) >= 1:
+                print('password={}'.format(lines[0].decode('utf-8')))
+            if 'username' not in request and len(lines) >= 2:
+                print('username={}'.format(lines[1].decode('utf-8')))
+            return
+
+    LOGGER.warning('No mapping matched')
+    sys.exit(1)
+
+
+def main():
+    args = parse_arguments()
+
+    if args.logging:
+        logging.basicConfig(level=logging.DEBUG)
+
+    action = args.action
+    request = parse_request()
+    LOGGER.debug('Received action %s with request:\n%s',
+                 action, request)
+
+    if action == 'get':
+        get_password(request, parse_mapping(args.mapping))
+    else:
+        LOGGER.info('Action %s is currently not supported', action)
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
