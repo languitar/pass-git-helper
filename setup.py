@@ -8,6 +8,7 @@ setup(
 
     author='Johannes Wienke',
     author_email='languitar@semipol.de',
+    url='https://github.com/languitar/pass-git-helper',
     description='A git credential helper interfacing with pass, '
                 'the standard unix password manager.',
 
