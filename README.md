@@ -51,7 +51,7 @@ git config credential.helper '!pass-git-helper $@'
 ## Passwordstore Layout
 
 As usual with [pass], this helper assumes that the password is contained in the first line of the passwordstore entry.
-Additionally, if a second line is present, this line is interpreted as the username and also returned to back to the git process invoking this helper.
+Additionally, if a second line is present, this line is interpreted as the username and also returned back to the git process invoking this helper.
 
 ## Command Line Options
 
