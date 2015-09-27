@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='pass-git-helper',
-    version='0.1',
+    version='0.2-dev',
 
     scripts=['pass-git-helper'],
 
