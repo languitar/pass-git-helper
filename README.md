@@ -48,6 +48,12 @@ The option can be set e.g. via:
 git config credential.helper '!pass-git-helper $@'
 ```
 
+If you want to match entries not only based on the host, but also based on the path on a host, set `credential.useHttpPath` to `true` in your git config, e.g. via:
+```sh
+git config credential.useHttpPath true
+```
+Afterwards, entries can be matched against `host.com/path/to/repo` in the mapping.
+
 ## Passwordstore Layout
 
 As usual with [pass], this helper assumes that the password is contained in the first line of the passwordstore entry.
