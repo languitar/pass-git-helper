@@ -48,6 +48,7 @@ def parse_mapping(mapping_file):
 
 def parse_request():
     in_lines = sys.stdin.readlines()
+    LOGGER.debug('Received request "%s"', in_lines)
     request = {}
     for line in in_lines:
         parts = line.split('=')
@@ -57,6 +58,7 @@ def parse_request():
 
 
 def get_password(request, mapping):
+    LOGGER.debug('Received request "%s"', request)
     if 'host' not in request:
         LOGGER.error('host= entry missing in request. '
                      'Cannot query without a host')
@@ -64,7 +66,7 @@ def get_password(request, mapping):
 
     host = request['host']
 
-    LOGGER.debug('Iterating mapping for to match against host "%s"', host)
+    LOGGER.debug('Iterating mapping to match against host "%s"', host)
     for section in mapping.sections():
         if fnmatch.fnmatch(host, section):
             LOGGER.debug('Section "%s" matches requested host "%s"',
