@@ -27,7 +27,7 @@ Each section needs to contain a `target` entry pointing to the entry in the pass
 
 Example:
 ```ini
-[github.com]
+[github.com*]
 target=dev/github
 
 [*.fooo-bar.*]
@@ -53,6 +53,17 @@ If you want to match entries not only based on the host, but also based on the p
 git config credential.useHttpPath true
 ```
 Afterwards, entries can be matched against `host.com/path/to/repo` in the mapping.
+This means that in order to use a specific account for a certain github project, you can then use the following mapping pattern:
+```ini
+[github.com/username/project*]
+target=dev/github
+```
+Please note that when including the path in the mapping, the mapping expressions need to match against the whole path.
+As a consequence, in case you want to use the same account for all github projects, you need to make sure that a wildcard covers the path of the URL, as shown here:
+```ini
+[github.com*]
+target=dev/github
+```
 
 ## Passwordstore Layout
 
