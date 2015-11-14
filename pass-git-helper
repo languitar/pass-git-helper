@@ -74,11 +74,17 @@ def parse_mapping(mapping_file):
 def parse_request():
     in_lines = sys.stdin.readlines()
     LOGGER.debug('Received request "%s"', in_lines)
+
     request = {}
     for line in in_lines:
+        # skip empty lines to be a bit resilient against protocol errors
+        if not line.strip():
+            continue
+
         parts = line.split('=')
         assert len(parts) == 2
         request[parts[0].strip()] = parts[1].strip()
+
     return request
 
 
