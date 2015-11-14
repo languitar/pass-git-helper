@@ -8,8 +8,13 @@ import os.path
 import subprocess
 import sys
 
+import xdg.BaseDirectory
+
 LOGGER = logging.getLogger()
-DEFAULT_MAPPING_FILE = os.path.expanduser('~/.git-pass-mapping')
+CONFIG_FILE_NAME = 'git-pass-mapping.ini'
+DEFAULT_CONFIG_FILE = os.path.join(
+    xdg.BaseDirectory.save_config_path('pass-git-helper'),
+    CONFIG_FILE_NAME)
 
 
 def parse_arguments():
@@ -20,9 +25,10 @@ def parse_arguments():
         '-m', '--mapping',
         type=argparse.FileType('r'),
         metavar='MAPPING_FILE',
-        default=DEFAULT_MAPPING_FILE,
+        default=None,
         help='A mapping file to be used, specifying how hosts '
-             'map to pass entries.')
+             'map to pass entries. Overrides the default mapping files from '
+             'XDG config locations, usually: {}'.format(DEFAULT_CONFIG_FILE))
     parser.add_argument(
         '-l', '--logging',
         action='store_true',
@@ -41,9 +47,28 @@ def parse_arguments():
 
 
 def parse_mapping(mapping_file):
-    config = configparser.ConfigParser()
-    config.read_file(mapping_file)
-    return config
+    LOGGER.debug('Parsing mapping file. Command line: %s', mapping_file)
+
+    def parse(mapping_file):
+        config = configparser.ConfigParser()
+        config.read_file(mapping_file)
+        return config
+
+    # give precedence to the user-specified file
+    if mapping_file is not None:
+        LOGGER.debug('Parsing command line mapping file')
+        return parse(mapping_file)
+
+    # fall back on XDG config location
+    xdg_config_dir = xdg.BaseDirectory.load_first_config('pass-git-helper')
+    if xdg_config_dir is None:
+        raise RuntimeError(
+            'No mapping configured so far at any XDG config location. '
+            'Please create {}'.format(DEFAULT_CONFIG_FILE))
+    mapping_file = os.path.join(xdg_config_dir, CONFIG_FILE_NAME)
+    LOGGER.debug('Parsing mapping file %s', mapping_file)
+    with open(mapping_file, 'r') as file_handle:
+        return parse(file_handle)
 
 
 def parse_request():
@@ -99,8 +124,16 @@ def main():
     LOGGER.debug('Received action %s with request:\n%s',
                  action, request)
 
+    try:
+        mapping = parse_mapping(args.mapping)
+    except Exception as error:
+        LOGGER.critical('Unable to parse mapping file', exc_info=True)
+        print('Unable to parse mapping file: {}'.format(error),
+              file=sys.stderr)
+        sys.exit(1)
+
     if action == 'get':
-        get_password(request, parse_mapping(args.mapping))
+        get_password(request, mapping)
     else:
         LOGGER.info('Action %s is currently not supported', action)
         sys.exit(1)

@@ -4,6 +4,8 @@ setup(
     name='pass-git-helper',
     version='0.2-dev',
 
+    install_requires=['pyxdg'],
+
     scripts=['pass-git-helper'],
 
     author='Johannes Wienke',

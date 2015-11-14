@@ -19,7 +19,7 @@ Ensure that `~/.local/bin` is in your `PATH` for the single-user installation.
 
 ## Usage
 
-Create the file `~/.git-pass-mapping`.
+Create the file `~/.config/pass-git-helper/git-pass-mapping.ini`.
 This file uses ini syntax to specify the mapping of hosts to entries in the passwordstore database.
 Section headers define patterns which are matched against the host part of a URL with a git repository.
 Matching supports wildcards (using the python [fnmatch module](https://docs.python.org/3.4/library/fnmatch.html)).
