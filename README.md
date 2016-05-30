@@ -77,6 +77,12 @@ This might be useful to understand how the mapping is applied.
 
 `-m MAPPING_FILE` can be specified to use an alternative mapping file location.
 
+## Skipping Processing
+
+In some automated contexts it might be necessary to prevent GPG from asking for the passphrase (via the agent).
+To achieve this, you can disable the complete processing of this helper by defining the environment variable `PASS_GIT_HELPER_SKIP` with any content (or no content at all).
+pass-git-helper will return immediately in this case, indicating to git that no suitable credentials could be found.
+
 ## License
 
 This library is [free software](https://en.wikipedia.org/wiki/Free_software); you can redistribute it and/or modify it under the terms of the [GNU Lesser General Public License](https://en.wikipedia.org/wiki/GNU_Lesser_General_Public_License) as published by the [Free Software Foundation](https://en.wikipedia.org/wiki/Free_Software_Foundation); either version 3 of the License, or any later version. This work is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the [GNU Lesser General Public License](https://www.gnu.org/copyleft/lgpl.html) for more details.
