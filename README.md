@@ -69,6 +69,20 @@ target=dev/github
 
 As usual with [pass], this helper assumes that the password is contained in the first line of the passwordstore entry.
 Additionally, if a second line is present, this line is interpreted as the username and also returned back to the git process invoking this helper.
+In case you use markers at the start of lines to identify what is contained in this line, e.g. like `Username: fooo`, the options `skip_username` and `skip_password` can be defined in each mapping so skip the given amount of characters from the beginning of the respective line.
+Additionally, global defaults can be configured via the `DEFAULT` section:
+```ini
+[DEFAULT]
+# this is actually the default
+skip_password=0
+# Lenght of "Username: "
+skip_username=10
+
+[somedomain]
+target=special/somedomain
+# somehow this entry does not have a prefix for the username
+skip_username=0
+```
 
 ## Command Line Options
 
