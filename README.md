@@ -3,6 +3,11 @@
 A [git] credential helper implementation which allows to use [pass] as the credential backend for your git repositories.
 This is achieved by explicitly defining mappings between hosts and entries in the password store.
 
+## Preconditions
+
+GPG must be configured to use a graphical pinentry dialog.
+The shell cannot be used due to the interaction required by [git]
+
 ## Installation
 
 System-wide:
