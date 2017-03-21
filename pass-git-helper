@@ -82,7 +82,7 @@ def parse_request():
         if not line.strip():
             continue
 
-        parts = line.split('=')
+        parts = line.split('=', 1)
         assert len(parts) == 2
         request[parts[0].strip()] = parts[1].strip()
 
