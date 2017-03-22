@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='pass-git-helper',
-    version='0.3-dev',
+    version='0.3.1',
 
     install_requires=['pyxdg'],
 
