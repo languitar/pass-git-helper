@@ -109,7 +109,7 @@ def get_password(request, mapping):
             LOGGER.debug('Section "%s" matches requested host "%s"',
                          section, host)
             # TODO handle exceptions
-            pass_target = mapping.get(section, 'target')
+            pass_target = mapping.get(section, 'target').replace("${host}", host)
             skip_password_chars = mapping.getint(
                 section, 'skip_password', fallback=0)
             skip_username_chars = mapping.getint(
