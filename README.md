@@ -69,6 +69,12 @@ As a consequence, in case you want to use the same account for all github projec
 [github.com*]
 target=dev/github
 ```
+In order to allow the usage of the host to address a pass entry, there is one variable substitution that takes place: `${host}` in the `target` is replaced by the host you're querying. This is especially helpful for wildcard matches:
+```ini
+[*]
+target=git-logins/${host}
+```
+The above configuration directive will lead to any host that didn't match any previous section in the ini file to being looked for under the `git-logins` directory in your password store.
 
 ## Passwordstore Layout
 
