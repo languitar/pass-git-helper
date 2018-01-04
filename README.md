@@ -2,7 +2,7 @@
 
 [![Debian CI](https://badges.debian.net/badges/debian/unstable/pass-git-helper/version.svg)](https://buildd.debian.org/pass-git-helper) [![AUR](https://img.shields.io/aur/version/pass-git-helper.svg)](https://aur.archlinux.org/packages/pass-git-helper/)
 
-A [git] credential helper implementation which allows to use [pass] as the credential backend for your git repositories.
+A [git] credential helper implementation that allows to use [pass] as the credential backend for your git repositories.
 This is achieved by explicitly defining mappings between hosts and entries in the password store.
 
 ## Preconditions
