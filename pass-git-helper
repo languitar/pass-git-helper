@@ -8,6 +8,7 @@ import os
 import os.path
 import subprocess
 import sys
+import re
 
 import xdg.BaseDirectory
 
@@ -104,6 +105,7 @@ def get_password(request, mapping):
         return line.decode('utf-8')[skip:]
 
     LOGGER.debug('Iterating mapping to match against host "%s"', host)
+
     for section in mapping.sections():
         if fnmatch.fnmatch(host, section):
             LOGGER.debug('Section "%s" matches requested host "%s"',
@@ -120,9 +122,15 @@ def get_password(request, mapping):
             if len(lines) >= 1:
                 print('password={}'.format(
                     decode_skip(lines[0], skip_password_chars)))
-            if 'username' not in request and len(lines) >= 2:
-                print('username={}'.format(
-                    decode_skip(lines[1], skip_username_chars)))
+            if 'username' not in request:
+                r = re.compile(b'(user(name)?|login)\s*:\s*(.*)$', re.IGNORECASE)
+                result = [ m.group(3) for m in (r.match(i) for i in filter(None, lines)) if m ]
+                if len(result) > 0:
+                    print('username={}'.format(
+                        decode_skip(result[0], skip_username_chars)))
+                elif len(lines) >= 2:
+                    print('username={}'.format(
+                        decode_skip(lines[1], skip_username_chars)))
             return
 
     LOGGER.warning('No mapping matched')
