@@ -6,6 +6,14 @@ setup(
 
     install_requires=['pyxdg'],
 
+    extras_require={
+        'test': [
+            'pytest',
+            'pytest-coverage',
+            'pytest-mock',
+        ]
+    },
+
     py_modules=['passgithelper'],
     entry_points={
         'console_scripts': [

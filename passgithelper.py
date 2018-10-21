@@ -18,7 +18,7 @@ DEFAULT_CONFIG_FILE = os.path.join(
     CONFIG_FILE_NAME)
 
 
-def parse_arguments():
+def parse_arguments(argv=None):
     parser = argparse.ArgumentParser(
         description='Git credential helper using pass as the data source.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -42,7 +42,7 @@ def parse_arguments():
         metavar='ACTION',
         help='Action to preform as specified in the git credential API')
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     return args
 
@@ -98,7 +98,7 @@ def get_password(request, mapping):
 
     host = request['host']
     if 'path' in request:
-        host = os.path.join(host, request['path'])
+        host = '/'.join([host, request['path']])
 
     def decode_skip(line, skip):
         return line.decode('utf-8')[skip:]
@@ -109,7 +109,8 @@ def get_password(request, mapping):
             LOGGER.debug('Section "%s" matches requested host "%s"',
                          section, host)
             # TODO handle exceptions
-            pass_target = mapping.get(section, 'target').replace("${host}", host)
+            pass_target = mapping.get(section, 'target').replace(
+                "${host}", request['host'])
             skip_password_chars = mapping.getint(
                 section, 'skip_password', fallback=0)
             skip_username_chars = mapping.getint(
@@ -136,8 +137,8 @@ def handle_skip():
         sys.exit(1)
 
 
-def main():
-    args = parse_arguments()
+def main(argv=None):
+    args = parse_arguments(argv=argv)
 
     if args.logging:
         logging.basicConfig(level=logging.DEBUG)
@@ -162,6 +163,7 @@ def main():
     else:
         LOGGER.info('Action %s is currently not supported', action)
         sys.exit(1)
+
 
 if __name__ == '__main__':
     main()
