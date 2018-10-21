@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/languitar/src/pass-git-helper/.tox/docs/bin/python
 
 import argparse
 import configparser

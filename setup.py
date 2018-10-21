@@ -6,7 +6,13 @@ setup(
 
     install_requires=['pyxdg'],
 
-    scripts=['pass-git-helper'],
+    py_modules=['passgithelper'],
+    entry_points={
+        'console_scripts': [
+            'pass-git-helper = passgithelper:main',
+        ]
+    },
+
 
     author='Johannes Wienke',
     author_email='languitar@semipol.de',
@@ -19,5 +25,6 @@ setup(
     classifiers=[
         'Programming Language :: Python :: 3',
         'Topic :: Utilities',
-        'License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)'
+        'License :: OSI Approved :: '
+        'GNU Lesser General Public License v3 or later (LGPLv3+)'
     ])
