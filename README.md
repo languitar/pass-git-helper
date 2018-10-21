@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/languitar/pass-git-helper.svg?branch=master)](https://travis-ci.org/languitar/pass-git-helper)
+
 # pass-git-helper
 
 [![Debian CI](https://badges.debian.net/badges/debian/testing/pass-git-helper/version.svg)](https://buildd.debian.org/pass-git-helper) [![AUR](https://img.shields.io/aur/version/pass-git-helper.svg)](https://aur.archlinux.org/packages/pass-git-helper/)
