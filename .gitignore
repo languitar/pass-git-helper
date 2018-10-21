@@ -1,3 +1,9 @@
 /build
 /dist
 *.egg-info
+/.tox/
+/__pycache__/
+/htmlcov/
+/tags
+/.coverage
+/.python-version
