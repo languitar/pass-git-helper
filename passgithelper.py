@@ -15,6 +15,7 @@ import os
 import os.path
 import subprocess
 import sys
+from typing import Dict, Optional, Sequence
 
 import xdg.BaseDirectory
 
@@ -25,7 +26,7 @@ DEFAULT_CONFIG_FILE = os.path.join(
     CONFIG_FILE_NAME)
 
 
-def parse_arguments(argv=None):
+def parse_arguments(argv: Optional[Sequence[str]]=None) -> argparse.Namespace:
     """
     Parse the command line arguments.
 
@@ -66,7 +67,7 @@ def parse_arguments(argv=None):
     return args
 
 
-def parse_mapping(mapping_file):
+def parse_mapping(mapping_file: Optional[str]) -> configparser.ConfigParser:
     """
     Parse the file containing the mappings from hosts to pass entries.
 
@@ -100,7 +101,7 @@ def parse_mapping(mapping_file):
         return parse(file_handle)
 
 
-def parse_request():
+def parse_request() -> Dict[str, str]:
     """
     Parse the request of the git credential API from stdin.
 
@@ -123,7 +124,7 @@ def parse_request():
     return request
 
 
-def get_password(request, mapping):
+def get_password(request, mapping) -> None:
     """
     Resolve the given credential request in the provided mapping definition.
 
@@ -175,7 +176,7 @@ def get_password(request, mapping):
     sys.exit(1)
 
 
-def handle_skip():
+def handle_skip() -> None:
     """Terminate the process if skipping is requested via an env variable."""
     if 'PASS_GIT_HELPER_SKIP' in os.environ:
         LOGGER.info(
@@ -183,7 +184,7 @@ def handle_skip():
         sys.exit(1)
 
 
-def main(argv=None):
+def main(argv: Optional[Sequence[str]]=None) -> None:
     """
     Start the pass-git-helper script.
 
