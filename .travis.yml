@@ -1,12 +1,17 @@
 language: python
-matrix:
-  include:
-    - python: 3.6
-      sudo: false
-    - python: 3.7
-      dist: xenial
-      sudo: true
+sudo: false
+
 install:
   - pip install tox-travis
 script:
   - tox
+
+jobs:
+  include:
+    - python: 3.6
+    - python: 3.7
+      dist: xenial
+      sudo: true
+    - stage: check
+      script: tox -e check
+      python: 3.6

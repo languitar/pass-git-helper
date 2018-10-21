@@ -1,4 +1,11 @@
-#!/home/languitar/src/pass-git-helper/.tox/docs/bin/python
+#!/usr/bin/env python3
+
+"""
+Implementation of the pass-git-helper utility.
+
+.. codeauthor:: Johannes Wienke
+"""
+
 
 import argparse
 import configparser
@@ -19,6 +26,17 @@ DEFAULT_CONFIG_FILE = os.path.join(
 
 
 def parse_arguments(argv=None):
+    """
+    Parse the command line arguments.
+
+    Args:
+        argv:
+            If not ``None``, use the provided command line arguments for
+            parsing. Otherwise, extract them automatically.
+
+    Returns:
+        The argparse object representing the parsed arguments.
+    """
     parser = argparse.ArgumentParser(
         description='Git credential helper using pass as the data source.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -29,7 +47,8 @@ def parse_arguments(argv=None):
         default=None,
         help='A mapping file to be used, specifying how hosts '
              'map to pass entries. Overrides the default mapping files from '
-             'XDG config locations, usually: {}'.format(DEFAULT_CONFIG_FILE))
+             'XDG config locations, usually: {config_file}'.format(
+                 config_file=DEFAULT_CONFIG_FILE))
     parser.add_argument(
         '-l', '--logging',
         action='store_true',
@@ -48,6 +67,14 @@ def parse_arguments(argv=None):
 
 
 def parse_mapping(mapping_file):
+    """
+    Parse the file containing the mappings from hosts to pass entries.
+
+    Args:
+        mapping_file:
+            Name of the file to parse. If ``None``, the default file from the
+            XDG location is used.
+    """
     LOGGER.debug('Parsing mapping file. Command line: %s', mapping_file)
 
     def parse(mapping_file):
@@ -65,7 +92,8 @@ def parse_mapping(mapping_file):
     if xdg_config_dir is None:
         raise RuntimeError(
             'No mapping configured so far at any XDG config location. '
-            'Please create {}'.format(DEFAULT_CONFIG_FILE))
+            'Please create {config_file}'.format(
+                config_file=DEFAULT_CONFIG_FILE))
     mapping_file = os.path.join(xdg_config_dir, CONFIG_FILE_NAME)
     LOGGER.debug('Parsing mapping file %s', mapping_file)
     with open(mapping_file, 'r') as file_handle:
@@ -73,6 +101,12 @@ def parse_mapping(mapping_file):
 
 
 def parse_request():
+    """
+    Parse the request of the git credential API from stdin.
+
+    Returns:
+        A dictionary with all key-value pairs of the request
+    """
     in_lines = sys.stdin.readlines()
     LOGGER.debug('Received request "%s"', in_lines)
 
@@ -90,6 +124,17 @@ def parse_request():
 
 
 def get_password(request, mapping):
+    """
+    Resolve the given credential request in the provided mapping definition.
+
+    The result is printed automatically.
+
+    Args:
+        request:
+            The credential request specified as a dict of key-value pairs.
+        mapping:
+            The mapping configuration as a ConfigParser instance.
+    """
     LOGGER.debug('Received request "%s"', request)
     if 'host' not in request:
         LOGGER.error('host= entry missing in request. '
@@ -119,10 +164,10 @@ def get_password(request, mapping):
             output = subprocess.check_output(['pass', 'show', pass_target])
             lines = output.splitlines()
             if len(lines) >= 1:
-                print('password={}'.format(
+                print('password={}'.format(  # noqa: P101
                     decode_skip(lines[0], skip_password_chars)))
             if 'username' not in request and len(lines) >= 2:
-                print('username={}'.format(
+                print('username={}'.format(  # noqa: P101
                     decode_skip(lines[1], skip_username_chars)))
             return
 
@@ -131,6 +176,7 @@ def get_password(request, mapping):
 
 
 def handle_skip():
+    """Terminate the process if skipping is requested via an env variable."""
     if 'PASS_GIT_HELPER_SKIP' in os.environ:
         LOGGER.info(
             'Skipping processing as requested via environment variable')
@@ -138,6 +184,14 @@ def handle_skip():
 
 
 def main(argv=None):
+    """
+    Start the pass-git-helper script.
+
+    Args:
+        argv:
+            If not ``None``, use the provided command line arguments for
+            parsing. Otherwise, extract them automatically.
+    """
     args = parse_arguments(argv=argv)
 
     if args.logging:
@@ -154,8 +208,10 @@ def main(argv=None):
         mapping = parse_mapping(args.mapping)
     except Exception as error:
         LOGGER.critical('Unable to parse mapping file', exc_info=True)
-        print('Unable to parse mapping file: {}'.format(error),
-              file=sys.stderr)
+        print(  # noqa: P101
+            'Unable to parse mapping file: {error}'.format(
+                error=error),
+            file=sys.stderr)
         sys.exit(1)
 
     if action == 'get':
