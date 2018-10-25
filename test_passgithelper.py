@@ -24,6 +24,43 @@ def test_handle_skip_exits(monkeypatch):
         passgithelper.handle_skip()
 
 
+class TestSkippingDataExtractor:
+
+    class ExtractorImplementation(passgithelper.SkippingDataExtractor):
+
+        def configure(self, config):
+            pass
+
+        def __init__(self, skip_characters: int = 0):
+            super().__init__(skip_characters)
+
+        def _get_raw(self, entry_text, entry_lines):
+            return entry_lines[0]
+
+    def test_smoke(self):
+        extractor = self.ExtractorImplementation(4)
+        assert extractor.get_value('foo', ['testthis']) == 'this'
+
+    def test_too_short(self):
+        extractor = self.ExtractorImplementation(8)
+        assert extractor.get_value('foo', ['testthis']) == ''
+        extractor = self.ExtractorImplementation(10)
+        assert extractor.get_value('foo', ['testthis']) == ''
+
+
+class TestSpecificLineExtractor:
+
+    def test_smoke(self):
+        extractor = passgithelper.SpecificLineExtractor(1, 6)
+        assert extractor.get_value(
+            'foo', ['line 1', 'user: bar', 'more lines']) == 'bar'
+
+    def test_no_such_line(self):
+        extractor = passgithelper.SpecificLineExtractor(3, 6)
+        assert extractor.get_value(
+            'foo', ['line 1', 'user: bar', 'more lines']) is None
+
+
 @pytest.mark.parametrize(
     'xdg_dir',
     [None],
