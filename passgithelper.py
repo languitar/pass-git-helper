@@ -26,7 +26,8 @@ DEFAULT_CONFIG_FILE = os.path.join(
     CONFIG_FILE_NAME)
 
 
-def parse_arguments(argv: Optional[Sequence[str]]=None) -> argparse.Namespace:
+def parse_arguments(
+        argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     """
     Parse the command line arguments.
 
@@ -184,7 +185,7 @@ def handle_skip() -> None:
         sys.exit(1)
 
 
-def main(argv: Optional[Sequence[str]]=None) -> None:
+def main(argv: Optional[Sequence[str]] = None) -> None:
     """
     Start the pass-git-helper script.
 
