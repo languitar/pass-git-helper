@@ -147,8 +147,8 @@ def get_password(request, mapping) -> None:
     if 'path' in request:
         host = '/'.join([host, request['path']])
 
-    def decode_skip(line, skip):
-        return line.decode('utf-8')[skip:]
+    def skip(line, skip):
+        return line[skip:]
 
     LOGGER.debug('Iterating mapping to match against host "%s"', host)
     for section in mapping.sections():
@@ -163,14 +163,15 @@ def get_password(request, mapping) -> None:
             skip_username_chars = mapping.getint(
                 section, 'skip_username', fallback=0)
             LOGGER.debug('Requesting entry "%s" from pass', pass_target)
-            output = subprocess.check_output(['pass', 'show', pass_target])
+            output = subprocess.check_output(
+                ['pass', 'show', pass_target]).decode('utf-8')
             lines = output.splitlines()
             if len(lines) >= 1:
                 print('password={}'.format(  # noqa: P101
-                    decode_skip(lines[0], skip_password_chars)))
+                    skip(lines[0], skip_password_chars)))
             if 'username' not in request and len(lines) >= 2:
                 print('username={}'.format(  # noqa: P101
-                    decode_skip(lines[1], skip_username_chars)))
+                    skip(lines[1], skip_username_chars)))
             return
 
     LOGGER.warning('No mapping matched')
