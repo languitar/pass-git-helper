@@ -96,6 +96,13 @@ regex_username=^foo: .*$""")
             extractor.configure(config['test'])
 
 
+class TestEntryNameExtractor:
+
+    def test_smoke(self):
+        assert passgithelper.EntryNameExtractor().get_value(
+            'foo/bar', []) == 'bar'
+
+
 @pytest.mark.parametrize(
     'xdg_dir',
     [None],
@@ -339,3 +346,25 @@ host=mytest.com'''))
 
         out, _ = capsys.readouterr()
         assert out == 'password=xyz\nusername=tester\n'
+
+    @pytest.mark.parametrize(
+        'xdg_dir',
+        ['test_data/entry-name-extraction'],
+        indirect=True,
+    )
+    def test_entry_name_is_user(
+            self, xdg_dir, monkeypatch, mocker, capsys):
+        monkeypatch.setattr('sys.stdin', io.StringIO('''
+protocol=https
+host=mytest.com'''))
+        subprocess_mock = mocker.patch('subprocess.check_output')
+        subprocess_mock.return_value = b'xyz'
+
+        passgithelper.main(['get'])
+
+        subprocess_mock.assert_called_once()
+        subprocess_mock.assert_called_with(
+            ['pass', 'show', 'dev/mytest/myuser'])
+
+        out, _ = capsys.readouterr()
+        assert out == 'password=xyz\nusername=myuser\n'

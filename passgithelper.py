@@ -297,12 +297,27 @@ class RegexSearchExtractor(DataExtractor):
         return None
 
 
+class EntryNameExtractor(DataExtractor):
+    """Return the last path fragment of the pass entry as the desired value."""
+
+    def configure(self, config):
+        """Configure nothing."""
+        pass
+
+    def get_value(self,
+                  entry_name: Text,
+                  entry_lines: Sequence[Text]) -> Optional[Text]:
+        """See base class method."""
+        return os.path.split(entry_name)[1]
+
+
 _line_extractor_name = 'specific_line'
 _username_extractors = {
     _line_extractor_name: SpecificLineExtractor(
         1, 0, option_suffix='_username'),
     'regex_search': RegexSearchExtractor(r'^username: +(.*)$',
                                          option_suffix='_username'),
+    'entry_name': EntryNameExtractor(option_suffix='_username'),
 }
 
 
