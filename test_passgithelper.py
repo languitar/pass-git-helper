@@ -267,3 +267,17 @@ host=mytest.com'''))
 
         out, _ = capsys.readouterr()
         assert out == 'password=xyz\nusername=tester\n'
+
+    @pytest.mark.parametrize(
+        'xdg_dir',
+        ['test_data/unknown-username-extractor'],
+        indirect=True,
+    )
+    def test_select_unknown_extractor(
+            self, xdg_dir, monkeypatch, mocker, capsys):
+        monkeypatch.setattr('sys.stdin', io.StringIO('''
+protocol=https
+host=mytest.com'''))
+
+        with pytest.raises(KeyError):
+            passgithelper.main(['get'])

@@ -249,6 +249,13 @@ class SpecificLineExtractor(SkippingDataExtractor):
             return None
 
 
+_line_extractor_name = 'specific_line'
+_username_extractors = {
+    _line_extractor_name: SpecificLineExtractor(
+        1, 0, option_suffix='_username'),
+}
+
+
 def get_password(request, mapping) -> None:
     """
     Resolve the given credential request in the provided mapping definition.
@@ -286,8 +293,10 @@ def get_password(request, mapping) -> None:
             password_extractor = SpecificLineExtractor(
                 0, 0, option_suffix='_password')
             password_extractor.configure(mapping[section])
-            username_extractor = SpecificLineExtractor(
-                1, 0, option_suffix='_username')
+            # username_extractor = SpecificLineExtractor(
+            #     1, 0, option_suffix='_username')
+            username_extractor = _username_extractors[mapping[section].get(
+                'username_extractor', fallback=_line_extractor_name)]
             username_extractor.configure(mapping[section])
 
             LOGGER.debug('Requesting entry "%s" from pass', pass_target)
