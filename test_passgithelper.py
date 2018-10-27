@@ -1,3 +1,4 @@
+import configparser
 import io
 import logging
 
@@ -59,6 +60,40 @@ class TestSpecificLineExtractor:
         extractor = passgithelper.SpecificLineExtractor(3, 6)
         assert extractor.get_value(
             'foo', ['line 1', 'user: bar', 'more lines']) is None
+
+
+class TestRegexSearchExtractor:
+
+    def test_smoke(self):
+        extractor = passgithelper.RegexSearchExtractor('^username: (.*)$', '')
+        assert extractor.get_value(
+            'foo',
+            ['thepassword',
+             'somethingelse',
+             'username: user',
+             'username: second ignored']) == 'user'
+
+    def test_missing_group(self):
+        with pytest.raises(ValueError):
+            passgithelper.RegexSearchExtractor('^username: .*$', '')
+
+    def test_configuration(self):
+        extractor = passgithelper.RegexSearchExtractor('^username: (.*)$',
+                                                       '_username')
+        config = configparser.ConfigParser()
+        config.read_string(r"""[test]
+regex_username=^foo: (.*)$""")
+        extractor.configure(config['test'])
+        assert extractor._regex.pattern == r'^foo: (.*)$'
+
+    def test_configuration_checks_groups(self):
+        extractor = passgithelper.RegexSearchExtractor('^username: (.*)$',
+                                                       '_username')
+        config = configparser.ConfigParser()
+        config.read_string(r"""[test]
+regex_username=^foo: .*$""")
+        with pytest.raises(ValueError):
+            extractor.configure(config['test'])
 
 
 @pytest.mark.parametrize(
@@ -274,10 +309,33 @@ host=mytest.com'''))
         indirect=True,
     )
     def test_select_unknown_extractor(
-            self, xdg_dir, monkeypatch, mocker, capsys):
+            self, xdg_dir, monkeypatch, capsys):
         monkeypatch.setattr('sys.stdin', io.StringIO('''
 protocol=https
 host=mytest.com'''))
 
         with pytest.raises(KeyError):
             passgithelper.main(['get'])
+
+    @pytest.mark.parametrize(
+        'xdg_dir',
+        ['test_data/regex-extraction'],
+        indirect=True,
+    )
+    def test_regex_username_selection(
+            self, xdg_dir, monkeypatch, mocker, capsys):
+        monkeypatch.setattr('sys.stdin', io.StringIO('''
+protocol=https
+host=mytest.com'''))
+        subprocess_mock = mocker.patch('subprocess.check_output')
+        subprocess_mock.return_value = \
+            b'xyz\nsomeline\nmyuser: tester\n' \
+            b'morestuff\nmyuser: ignore'
+
+        passgithelper.main(['get'])
+
+        subprocess_mock.assert_called_once()
+        subprocess_mock.assert_called_with(['pass', 'show', 'dev/mytest'])
+
+        out, _ = capsys.readouterr()
+        assert out == 'password=xyz\nusername=tester\n'

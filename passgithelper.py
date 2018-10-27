@@ -14,6 +14,7 @@ import fnmatch
 import logging
 import os
 import os.path
+import re
 import subprocess
 import sys
 from typing import Dict, Optional, Sequence, Text
@@ -249,10 +250,59 @@ class SpecificLineExtractor(SkippingDataExtractor):
             return None
 
 
+class RegexSearchExtractor(DataExtractor):
+    """Extracts data using a regular expression with capture group."""
+
+    def __init__(self, regex: str, option_suffix: str):
+        """
+        Create a new instance.
+
+        Args:
+            regex:
+                The regular expression describing the entry line to match. The
+                first matching line is selected. The expression must contain a
+                single capture group that contains the data to return.
+            option_suffix:
+                Suffix for each configuration option
+        """
+        super().__init__(option_suffix)
+        self._regex = self._build_matcher(regex)
+
+    def _build_matcher(self, regex):
+        matcher = re.compile(regex)
+        if matcher.groups != 1:
+            raise ValueError('Provided regex "{regex}" must contain a single '
+                             'capture group for the value to return.'.format(
+                                 regex=regex))
+        return matcher
+
+    def configure(self, config):
+        """See base class method."""
+        super().configure(config)
+
+        self._regex = self._build_matcher(config.get(
+            'regex{suffix}'.format(suffix=self._option_suffix),
+            fallback=self._regex.pattern))
+
+    def get_value(self,
+                  entry_name: Text,
+                  entry_lines: Sequence[Text]) -> Optional[Text]:
+        """See base class method."""
+        # Search through all lines and return the first matching one
+        for line in entry_lines:
+            match = self._regex.match(line)
+            if match:
+                return match.group(1)
+        # nothing matched
+        return None
+
+
 _line_extractor_name = 'specific_line'
 _username_extractors = {
     _line_extractor_name: SpecificLineExtractor(
         1, 0, option_suffix='_username'),
+    'regex_search': RegexSearchExtractor(r'^username: +(.*)$',
+                                         option_suffix='_username'),
 }
 
 
