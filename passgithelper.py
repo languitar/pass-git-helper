@@ -7,15 +7,17 @@ Implementation of the pass-git-helper utility.
 """
 
 
+import abc
 import argparse
 import configparser
 import fnmatch
 import logging
 import os
 import os.path
+import re
 import subprocess
 import sys
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence, Text
 
 import xdg.BaseDirectory
 
@@ -125,6 +127,200 @@ def parse_request() -> Dict[str, str]:
     return request
 
 
+class DataExtractor(abc.ABC):
+    """Interface for classes that extract values from pass entries."""
+
+    def __init__(self, option_suffix: Text = ''):
+        """
+        Create a new instance.
+
+        Args:
+            option_suffix:
+                Suffix to put behind names of configuration keys for this
+                instance. Subclasses must use this for their own options.
+        """
+        self._option_suffix = option_suffix
+
+    @abc.abstractmethod
+    def configure(self, config: configparser.SectionProxy):
+        """
+        Configure the extractor from the mapping section.
+
+        Args:
+            config:
+                configuration section for the entry
+        """
+        pass
+
+    @abc.abstractmethod
+    def get_value(self,
+                  entry_name: Text,
+                  entry_lines: Sequence[Text]) -> Optional[Text]:
+        """
+        Return the extracted value.
+
+        Args:
+            entry_name:
+                Name of the pass entry the value shall be extracted from
+            entry_lines:
+                The entry contents as a sequence of text lines
+
+        Returns:
+            The extracted value or ``None`` if nothing applicable can be found
+            in the entry.
+        """
+        pass
+
+
+class SkippingDataExtractor(DataExtractor):
+    """
+    Extracts data from a pass entry and optionally strips a prefix.
+
+    The prefix is a fixed amount of characters.
+    """
+
+    def __init__(self, prefix_length: int, option_suffix: Text = '') -> None:
+        """
+        Create a new instance.
+
+        Args:
+            prefix_length:
+                Amount of characters to skip at the beginning of the entry
+        """
+        super().__init__(option_suffix)
+        self._prefix_length = prefix_length
+
+    @abc.abstractmethod
+    def configure(self, config):
+        """Configure the amount of characters to skip."""
+        self._prefix_length = config.getint(
+            'skip{suffix}'.format(suffix=self._option_suffix),
+            fallback=self._prefix_length)
+
+    @abc.abstractmethod
+    def _get_raw(self,
+                 entry_name: Text,
+                 entry_lines: Sequence[Text]) -> Optional[Text]:
+        pass
+
+    def get_value(self,
+                  entry_name: Text,
+                  entry_lines: Sequence[Text]) -> Optional[Text]:
+        """See base class method."""
+        raw_value = self._get_raw(entry_name, entry_lines)
+        if raw_value is not None:
+            return raw_value[self._prefix_length:]
+        else:
+            return None
+
+
+class SpecificLineExtractor(SkippingDataExtractor):
+    """Extracts a specific line number from an entry."""
+
+    def __init__(self,
+                 line: int, prefix_length: int,
+                 option_suffix: Text = '') -> None:
+        """
+        Create a new instance.
+
+        Args:
+            line:
+                the line to extract, counting from zero
+            prefix_length:
+                Amount of characters to skip at the beginning of the line
+            option_suffix:
+                Suffix for each configuration option
+        """
+        super().__init__(prefix_length, option_suffix)
+        self._line = line
+
+    def configure(self, config):
+        """See base class method."""
+        super().configure(config)
+        self._line = config.getint(
+            'line{suffix}'.format(suffix=self._option_suffix),
+            fallback=self._line)
+
+    def _get_raw(self,
+                 entry_name: Text,
+                 entry_lines: Sequence[Text]) -> Optional[Text]:
+        if len(entry_lines) > self._line:
+            return entry_lines[self._line]
+        else:
+            return None
+
+
+class RegexSearchExtractor(DataExtractor):
+    """Extracts data using a regular expression with capture group."""
+
+    def __init__(self, regex: str, option_suffix: str):
+        """
+        Create a new instance.
+
+        Args:
+            regex:
+                The regular expression describing the entry line to match. The
+                first matching line is selected. The expression must contain a
+                single capture group that contains the data to return.
+            option_suffix:
+                Suffix for each configuration option
+        """
+        super().__init__(option_suffix)
+        self._regex = self._build_matcher(regex)
+
+    def _build_matcher(self, regex):
+        matcher = re.compile(regex)
+        if matcher.groups != 1:
+            raise ValueError('Provided regex "{regex}" must contain a single '
+                             'capture group for the value to return.'.format(
+                                 regex=regex))
+        return matcher
+
+    def configure(self, config):
+        """See base class method."""
+        super().configure(config)
+
+        self._regex = self._build_matcher(config.get(
+            'regex{suffix}'.format(suffix=self._option_suffix),
+            fallback=self._regex.pattern))
+
+    def get_value(self,
+                  entry_name: Text,
+                  entry_lines: Sequence[Text]) -> Optional[Text]:
+        """See base class method."""
+        # Search through all lines and return the first matching one
+        for line in entry_lines:
+            match = self._regex.match(line)
+            if match:
+                return match.group(1)
+        # nothing matched
+        return None
+
+
+class EntryNameExtractor(DataExtractor):
+    """Return the last path fragment of the pass entry as the desired value."""
+
+    def configure(self, config):
+        """Configure nothing."""
+        pass
+
+    def get_value(self,
+                  entry_name: Text,
+                  entry_lines: Sequence[Text]) -> Optional[Text]:
+        """See base class method."""
+        return os.path.split(entry_name)[1]
+
+
+_line_extractor_name = 'specific_line'
+_username_extractors = {
+    _line_extractor_name: SpecificLineExtractor(
+        1, 0, option_suffix='_username'),
+    'regex_search': RegexSearchExtractor(r'^username: +(.*)$',
+                                         option_suffix='_username'),
+    'entry_name': EntryNameExtractor(option_suffix='_username'),
+}
+
+
 def get_password(request, mapping) -> None:
     """
     Resolve the given credential request in the provided mapping definition.
@@ -147,8 +343,8 @@ def get_password(request, mapping) -> None:
     if 'path' in request:
         host = '/'.join([host, request['path']])
 
-    def decode_skip(line, skip):
-        return line.decode('utf-8')[skip:]
+    def skip(line, skip):
+        return line[skip:]
 
     LOGGER.debug('Iterating mapping to match against host "%s"', host)
     for section in mapping.sections():
@@ -158,19 +354,29 @@ def get_password(request, mapping) -> None:
             # TODO handle exceptions
             pass_target = mapping.get(section, 'target').replace(
                 "${host}", request['host'])
-            skip_password_chars = mapping.getint(
-                section, 'skip_password', fallback=0)
-            skip_username_chars = mapping.getint(
-                section, 'skip_username', fallback=0)
+
+            password_extractor = SpecificLineExtractor(
+                0, 0, option_suffix='_password')
+            password_extractor.configure(mapping[section])
+            # username_extractor = SpecificLineExtractor(
+            #     1, 0, option_suffix='_username')
+            username_extractor = _username_extractors[mapping[section].get(
+                'username_extractor', fallback=_line_extractor_name)]
+            username_extractor.configure(mapping[section])
+
             LOGGER.debug('Requesting entry "%s" from pass', pass_target)
-            output = subprocess.check_output(['pass', 'show', pass_target])
+            output = subprocess.check_output(
+                ['pass', 'show', pass_target]).decode('utf-8')
             lines = output.splitlines()
-            if len(lines) >= 1:
-                print('password={}'.format(  # noqa: P101
-                    decode_skip(lines[0], skip_password_chars)))
-            if 'username' not in request and len(lines) >= 2:
-                print('username={}'.format(  # noqa: P101
-                    decode_skip(lines[1], skip_username_chars)))
+
+            password = password_extractor.get_value(pass_target, lines)
+            username = username_extractor.get_value(pass_target, lines)
+            if password:
+                print('password={password}'.format(  # noqa: T001
+                    password=password))
+            if 'username' not in request and username:
+                print('username={username}'.format(  # noqa: T001
+                    username=username))
             return
 
     LOGGER.warning('No mapping matched')

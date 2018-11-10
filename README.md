@@ -4,13 +4,13 @@
 
 [![Debian CI](https://badges.debian.net/badges/debian/testing/pass-git-helper/version.svg)](https://buildd.debian.org/pass-git-helper) [![AUR](https://img.shields.io/aur/version/pass-git-helper.svg)](https://aur.archlinux.org/packages/pass-git-helper/)
 
-A [git] credential helper implementation that allows to use [pass] as the credential backend for your git repositories.
+A [git] credential helper implementation that allows using [pass] as the credential backend for your git repositories.
 This is achieved by explicitly defining mappings between hosts and entries in the password store.
 
 ## Preconditions
 
 GPG must be configured to use a graphical pinentry dialog.
-The shell cannot be used due to the interaction required by [git]
+The shell cannot be used due to the interaction required by [git].
 
 ## Installation
 
@@ -31,7 +31,7 @@ Ensure that `~/.local/bin` is in your `PATH` for the single-user installation.
 Create the file `~/.config/pass-git-helper/git-pass-mapping.ini`.
 This file uses ini syntax to specify the mapping of hosts to entries in the passwordstore database.
 Section headers define patterns which are matched against the host part of a URL with a git repository.
-Matching supports wildcards (using the python [fnmatch module](https://docs.python.org/3.4/library/fnmatch.html)).
+Matching supports wildcards (using the python [fnmatch module](https://docs.python.org/3.7/library/fnmatch.html)).
 Each section needs to contain a `target` entry pointing to the entry in the password store with the password (and optionally username) to use.
 
 Example:
@@ -81,24 +81,70 @@ target=git-logins/${host}
 ```
 The above configuration directive will lead to any host that did not match any previous section in the ini file to being looked up under the `git-logins` directory in your passwordstore.
 
-## Passwordstore Layout
+### DEFAULT section
+
+Defaults suitable for all entries of the mapping file can be specified in a special section of the configuration file named `[DEFAULT]`.
+Everything configure in this section will automatically be available for all further entries in the file, but can be overriden there, too.
+
+## Passwordstore Layout and Data Extraction
+
+### Password
 
 As usual with [pass], this helper assumes that the password is contained in the first line of the passwordstore entry.
-Additionally, if a second line is present, this line is interpreted as the username and also returned back to the git process invoking this helper.
-In case you use markers at the start of lines to identify what is contained in this line, e.g. like `Username: fooo`, the options `skip_username` and `skip_password` can be defined in each mapping to skip the given amount of characters from the beginning of the respective line.
-Additionally, global defaults can be configured via the `DEFAULT` section:
+Though uncommon, it is possible to strip a prefix from the data of the first line (such as `password:` by specifying an amount of characters to leave out in the `skip_password` field for an entry or also in the `[DEFAULT]` section to apply for all entries:
+
 ```ini
 [DEFAULT]
-# this is actually the default
-skip_password=0
-# Lenght of "Username: "
-skip_username=10
+# length of "password: "
+skip_password=10
 
 [somedomain]
-target=special/somedomain
-# somehow this entry does not have a prefix for the username
-skip_username=0
+# for some reasons, this entry doesn't have a password prefix
+skip_password=0
+target=special/noprefix
 ```
+
+### Username
+
+`pass-git-helper` can also provide the username necessary for authenticating at a server.
+In contrast to the password, no clear convention exists how username information is stored in password entries.
+Therefore, multiple strategies to extract the username are implemented and can be selected globally for the whole passwordstore in the `[DEFAULT]` section, or individually for certain entries using the `username_extractor` key:
+
+```ini
+[DEFAULT]
+username_extractor=regex_search
+regex_username=^user: (.*)$
+
+[differingdomain.com]
+# use a fixed line here instead of a regex search
+username_extractor=specific_line
+line_username=1
+```
+
+The following strategies can be configured:
+
+#### Strategy "specific_line" (default)
+
+Extracts the data from a line indexed by its line number.
+Optionally a fixed-length prefix can be stripped before returning the line contents.
+
+Configuration:
+* `line_username`: Line number containing the username, **0-based**. Default: 1 (second line)
+* `skip_username`: Number of characters to skip at the beginning of the line, for instance to skip a `user: ` prefix. Similar to `skip_password`. Default: 0.
+
+#### Strategy "regex_search"
+
+Searches for the first line that matches a provided regular expressions and returns the contents of that line that are captured in a regular expression capture group.
+
+Configuration:
+* `regex_username`: The regular expression to apply. Has to contain a single capture group for indicating the data to extract. Default: `^username: +(.*)$`.
+
+#### Strategy "entry_name"
+
+Returns the last path fragment of the passwordstore entry as the username.
+For instance, if a regular [pass] call would be `pass show dev/github.com/languitar`, the returned username would be `languitar`.
+
+No configuration options.
 
 ## Command Line Options
 
