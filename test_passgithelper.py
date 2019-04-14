@@ -208,6 +208,7 @@ path=subpath/bar.git'''))
         monkeypatch.setattr('sys.stdin', io.StringIO('''
 protocol=https
 host=wildcard.com
+username=wildcard
 path=subpath/bar.git'''))
 
         subprocess_mock = mocker.patch('subprocess.check_output')
@@ -217,7 +218,7 @@ path=subpath/bar.git'''))
 
         subprocess_mock.assert_called_once()
         subprocess_mock.assert_called_with(
-            ['pass', 'show', 'dev/wildcard.com'])
+            ['pass', 'show', 'dev/wildcard.com/wildcard'])
 
         out, _ = capsys.readouterr()
         assert out == 'password=narf-wildcard\n'
