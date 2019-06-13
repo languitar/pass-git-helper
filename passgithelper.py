@@ -354,6 +354,9 @@ def get_password(request, mapping) -> None:
             # TODO handle exceptions
             pass_target = mapping.get(section, 'target').replace(
                 "${host}", request['host'])
+            if 'username' in request:
+                pass_target = pass_target.replace(
+                    "${username}", request['username'])
 
             password_extractor = SpecificLineExtractor(
                 0, 0, option_suffix='_password')
