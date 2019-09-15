@@ -81,6 +81,23 @@ target=git-logins/${host}
 ```
 The above configuration directive will lead to any host that did not match any previous section in the ini file to being looked up under the `git-logins` directory in your passwordstore.
 
+Using the `includeIf` directive available in git >= 2.13, it is also possible to perform matching based on the current working directory by invoking `pass-git-helper` with a conditional `MAPPING-FILE`.
+To achieve this, edit your `.gitconfig`, e.g. like this:
+```ini
+[includeIf "gitdir:~/src/user1/"]
+    path=~/.config/git/gitconfig_user1
+[includeIf "gitdir:~/src/user2/"]
+    path=~/.config/git/gitconfig_user2
+```
+With the following contents of `gitconfig_user1` (and `gitconfig_user2` repspectively), `mapping_user1.ini`, which could contain a `target` entry to e.g. `github.com/user1` would always be invoked in `~/src/user1`:
+```ini
+[user]
+    name = user1
+[credential]
+    helper=/full/path/to/pass-git-helper -m /full/path/to/mapping_user1.ini
+```
+See also the offical [documentation](https://git-scm.com/docs/git-config#_includes) for `.gitconfig`.  
+
 ### DEFAULT section
 
 Defaults suitable for all entries of the mapping file can be specified in a special section of the configuration file named `[DEFAULT]`.
