@@ -171,11 +171,12 @@ protocol=https
 host=mytest.com
 path=/foo/bar.git'''))
 
-        with pytest.raises(SystemExit):
-            passgithelper.main(['get'])
-        assert caplog.record_tuples == [
-            ('root', logging.WARN, 'No mapping matched'),
-        ]
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(SystemExit):
+                passgithelper.main(['get'])
+            assert caplog.record_tuples == [
+                ('root', logging.WARNING, 'No mapping matched'),
+            ]
 
     @pytest.mark.parametrize(
         'xdg_dir',

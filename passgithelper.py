@@ -419,7 +419,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         mapping = parse_mapping(args.mapping)
     except Exception as error:
         LOGGER.critical('Unable to parse mapping file', exc_info=True)
-        print(  # noqa: P101
+        print(  # noqa: T001
             'Unable to parse mapping file: {error}'.format(
                 error=error),
             file=sys.stderr)

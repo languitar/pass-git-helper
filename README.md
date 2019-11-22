@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/languitar/pass-git-helper.svg?branch=master)](https://travis-ci.org/languitar/pass-git-helper) [![codecov](https://codecov.io/gh/languitar/pass-git-helper/branch/master/graph/badge.svg)](https://codecov.io/gh/languitar/pass-git-helper)
+[![Actions Status](https://github.com/languitar/pass-git-helper/workflows/CI%20build/badge.svg)](https://github.com/languitar/pass-git-helper/actions) [![codecov](https://codecov.io/gh/languitar/pass-git-helper/branch/master/graph/badge.svg)](https://codecov.io/gh/languitar/pass-git-helper)
 
 # pass-git-helper
 
