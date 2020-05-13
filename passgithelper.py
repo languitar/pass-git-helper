@@ -17,19 +17,18 @@ import os.path
 import re
 import subprocess
 import sys
-from typing import Dict, Optional, Sequence, Text
+from typing import Dict, Optional, Pattern, Sequence, Text
 
 import xdg.BaseDirectory
 
 LOGGER = logging.getLogger()
-CONFIG_FILE_NAME = 'git-pass-mapping.ini'
+CONFIG_FILE_NAME = "git-pass-mapping.ini"
 DEFAULT_CONFIG_FILE = os.path.join(
-    xdg.BaseDirectory.save_config_path('pass-git-helper'),
-    CONFIG_FILE_NAME)
+    xdg.BaseDirectory.save_config_path("pass-git-helper"), CONFIG_FILE_NAME
+)
 
 
-def parse_arguments(
-        argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     """
     Parse the command line arguments.
 
@@ -42,28 +41,34 @@ def parse_arguments(
         The argparse object representing the parsed arguments.
     """
     parser = argparse.ArgumentParser(
-        description='Git credential helper using pass as the data source.',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        description="Git credential helper using pass as the data source.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument(
-        '-m', '--mapping',
-        type=argparse.FileType('r'),
-        metavar='MAPPING_FILE',
+        "-m",
+        "--mapping",
+        type=argparse.FileType("r"),
+        metavar="MAPPING_FILE",
         default=None,
-        help='A mapping file to be used, specifying how hosts '
-             'map to pass entries. Overrides the default mapping files from '
-             'XDG config locations, usually: {config_file}'.format(
-                 config_file=DEFAULT_CONFIG_FILE))
+        help="A mapping file to be used, specifying how hosts "
+        "map to pass entries. Overrides the default mapping files from "
+        "XDG config locations, usually: {config_file}".format(
+            config_file=DEFAULT_CONFIG_FILE
+        ),
+    )
     parser.add_argument(
-        '-l', '--logging',
-        action='store_true',
+        "-l",
+        "--logging",
+        action="store_true",
         default=False,
-        help='Print debug messages on stderr. '
-             'Might include sensitive information')
+        help="Print debug messages on stderr. " "Might include sensitive information",
+    )
     parser.add_argument(
-        'action',
+        "action",
         type=str,
-        metavar='ACTION',
-        help='Action to preform as specified in the git credential API')
+        metavar="ACTION",
+        help="Action to preform as specified in the git credential API",
+    )
 
     args = parser.parse_args(argv)
 
@@ -79,7 +84,7 @@ def parse_mapping(mapping_file: Optional[str]) -> configparser.ConfigParser:
             Name of the file to parse. If ``None``, the default file from the
             XDG location is used.
     """
-    LOGGER.debug('Parsing mapping file. Command line: %s', mapping_file)
+    LOGGER.debug("Parsing mapping file. Command line: %s", mapping_file)
 
     def parse(mapping_file):
         config = configparser.ConfigParser()
@@ -88,19 +93,19 @@ def parse_mapping(mapping_file: Optional[str]) -> configparser.ConfigParser:
 
     # give precedence to the user-specified file
     if mapping_file is not None:
-        LOGGER.debug('Parsing command line mapping file')
+        LOGGER.debug("Parsing command line mapping file")
         return parse(mapping_file)
 
     # fall back on XDG config location
-    xdg_config_dir = xdg.BaseDirectory.load_first_config('pass-git-helper')
+    xdg_config_dir = xdg.BaseDirectory.load_first_config("pass-git-helper")
     if xdg_config_dir is None:
         raise RuntimeError(
-            'No mapping configured so far at any XDG config location. '
-            'Please create {config_file}'.format(
-                config_file=DEFAULT_CONFIG_FILE))
+            "No mapping configured so far at any XDG config location. "
+            "Please create {config_file}".format(config_file=DEFAULT_CONFIG_FILE)
+        )
     mapping_file = os.path.join(xdg_config_dir, CONFIG_FILE_NAME)
-    LOGGER.debug('Parsing mapping file %s', mapping_file)
-    with open(mapping_file, 'r') as file_handle:
+    LOGGER.debug("Parsing mapping file %s", mapping_file)
+    with open(mapping_file, "r") as file_handle:
         return parse(file_handle)
 
 
@@ -120,7 +125,7 @@ def parse_request() -> Dict[str, str]:
         if not line.strip():
             continue
 
-        parts = line.split('=', 1)
+        parts = line.split("=", 1)
         assert len(parts) == 2
         request[parts[0].strip()] = parts[1].strip()
 
@@ -130,7 +135,7 @@ def parse_request() -> Dict[str, str]:
 class DataExtractor(abc.ABC):
     """Interface for classes that extract values from pass entries."""
 
-    def __init__(self, option_suffix: Text = ''):
+    def __init__(self, option_suffix: Text = "") -> None:
         """
         Create a new instance.
 
@@ -142,7 +147,7 @@ class DataExtractor(abc.ABC):
         self._option_suffix = option_suffix
 
     @abc.abstractmethod
-    def configure(self, config: configparser.SectionProxy):
+    def configure(self, config: configparser.SectionProxy) -> None:
         """
         Configure the extractor from the mapping section.
 
@@ -153,9 +158,9 @@ class DataExtractor(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def get_value(self,
-                  entry_name: Text,
-                  entry_lines: Sequence[Text]) -> Optional[Text]:
+    def get_value(
+        self, entry_name: Text, entry_lines: Sequence[Text]
+    ) -> Optional[Text]:
         """
         Return the extracted value.
 
@@ -179,7 +184,7 @@ class SkippingDataExtractor(DataExtractor):
     The prefix is a fixed amount of characters.
     """
 
-    def __init__(self, prefix_length: int, option_suffix: Text = '') -> None:
+    def __init__(self, prefix_length: int, option_suffix: Text = "") -> None:
         """
         Create a new instance.
 
@@ -191,25 +196,24 @@ class SkippingDataExtractor(DataExtractor):
         self._prefix_length = prefix_length
 
     @abc.abstractmethod
-    def configure(self, config):
+    def configure(self, config: configparser.SectionProxy):
         """Configure the amount of characters to skip."""
         self._prefix_length = config.getint(
-            'skip{suffix}'.format(suffix=self._option_suffix),
-            fallback=self._prefix_length)
+            "skip{suffix}".format(suffix=self._option_suffix),
+            fallback=self._prefix_length,
+        )
 
     @abc.abstractmethod
-    def _get_raw(self,
-                 entry_name: Text,
-                 entry_lines: Sequence[Text]) -> Optional[Text]:
+    def _get_raw(self, entry_name: Text, entry_lines: Sequence[Text]) -> Optional[Text]:
         pass
 
-    def get_value(self,
-                  entry_name: Text,
-                  entry_lines: Sequence[Text]) -> Optional[Text]:
+    def get_value(
+        self, entry_name: Text, entry_lines: Sequence[Text]
+    ) -> Optional[Text]:
         """See base class method."""
         raw_value = self._get_raw(entry_name, entry_lines)
         if raw_value is not None:
-            return raw_value[self._prefix_length:]
+            return raw_value[self._prefix_length :]
         else:
             return None
 
@@ -217,9 +221,7 @@ class SkippingDataExtractor(DataExtractor):
 class SpecificLineExtractor(SkippingDataExtractor):
     """Extracts a specific line number from an entry."""
 
-    def __init__(self,
-                 line: int, prefix_length: int,
-                 option_suffix: Text = '') -> None:
+    def __init__(self, line: int, prefix_length: int, option_suffix: Text = "") -> None:
         """
         Create a new instance.
 
@@ -234,16 +236,14 @@ class SpecificLineExtractor(SkippingDataExtractor):
         super().__init__(prefix_length, option_suffix)
         self._line = line
 
-    def configure(self, config):
+    def configure(self, config: configparser.SectionProxy) -> None:
         """See base class method."""
         super().configure(config)
         self._line = config.getint(
-            'line{suffix}'.format(suffix=self._option_suffix),
-            fallback=self._line)
+            "line{suffix}".format(suffix=self._option_suffix), fallback=self._line
+        )
 
-    def _get_raw(self,
-                 entry_name: Text,
-                 entry_lines: Sequence[Text]) -> Optional[Text]:
+    def _get_raw(self, entry_name: Text, entry_lines: Sequence[Text]) -> Optional[Text]:
         if len(entry_lines) > self._line:
             return entry_lines[self._line]
         else:
@@ -253,7 +253,7 @@ class SpecificLineExtractor(SkippingDataExtractor):
 class RegexSearchExtractor(DataExtractor):
     """Extracts data using a regular expression with capture group."""
 
-    def __init__(self, regex: str, option_suffix: str):
+    def __init__(self, regex: str, option_suffix: str) -> None:
         """
         Create a new instance.
 
@@ -268,25 +268,29 @@ class RegexSearchExtractor(DataExtractor):
         super().__init__(option_suffix)
         self._regex = self._build_matcher(regex)
 
-    def _build_matcher(self, regex):
+    def _build_matcher(self, regex: str) -> Pattern:
         matcher = re.compile(regex)
         if matcher.groups != 1:
-            raise ValueError('Provided regex "{regex}" must contain a single '
-                             'capture group for the value to return.'.format(
-                                 regex=regex))
+            raise ValueError(
+                'Provided regex "{regex}" must contain a single '
+                "capture group for the value to return.".format(regex=regex)
+            )
         return matcher
 
-    def configure(self, config):
+    def configure(self, config: configparser.SectionProxy) -> None:
         """See base class method."""
         super().configure(config)
 
-        self._regex = self._build_matcher(config.get(
-            'regex{suffix}'.format(suffix=self._option_suffix),
-            fallback=self._regex.pattern))
+        self._regex = self._build_matcher(
+            config.get(
+                "regex{suffix}".format(suffix=self._option_suffix),
+                fallback=self._regex.pattern,
+            )
+        )
 
-    def get_value(self,
-                  entry_name: Text,
-                  entry_lines: Sequence[Text]) -> Optional[Text]:
+    def get_value(
+        self, entry_name: Text, entry_lines: Sequence[Text]
+    ) -> Optional[Text]:
         """See base class method."""
         # Search through all lines and return the first matching one
         for line in entry_lines:
@@ -300,24 +304,24 @@ class RegexSearchExtractor(DataExtractor):
 class EntryNameExtractor(DataExtractor):
     """Return the last path fragment of the pass entry as the desired value."""
 
-    def configure(self, config):
+    def configure(self, config: configparser.SectionProxy) -> None:
         """Configure nothing."""
         pass
 
-    def get_value(self,
-                  entry_name: Text,
-                  entry_lines: Sequence[Text]) -> Optional[Text]:
+    def get_value(
+        self, entry_name: Text, entry_lines: Sequence[Text]
+    ) -> Optional[Text]:
         """See base class method."""
         return os.path.split(entry_name)[1]
 
 
-_line_extractor_name = 'specific_line'
+_line_extractor_name = "specific_line"
 _username_extractors = {
-    _line_extractor_name: SpecificLineExtractor(
-        1, 0, option_suffix='_username'),
-    'regex_search': RegexSearchExtractor(r'^username: +(.*)$',
-                                         option_suffix='_username'),
-    'entry_name': EntryNameExtractor(option_suffix='_username'),
+    _line_extractor_name: SpecificLineExtractor(1, 0, option_suffix="_username"),
+    "regex_search": RegexSearchExtractor(
+        r"^username: +(.*)$", option_suffix="_username"
+    ),
+    "entry_name": EntryNameExtractor(option_suffix="_username"),
 }
 
 
@@ -334,14 +338,13 @@ def get_password(request, mapping) -> None:
             The mapping configuration as a ConfigParser instance.
     """
     LOGGER.debug('Received request "%s"', request)
-    if 'host' not in request:
-        LOGGER.error('host= entry missing in request. '
-                     'Cannot query without a host')
+    if "host" not in request:
+        LOGGER.error("host= entry missing in request. Cannot query without a host")
         return
 
-    host = request['host']
-    if 'path' in request:
-        host = '/'.join([host, request['path']])
+    host = request["host"]
+    if "path" in request:
+        host = "/".join([host, request["path"]])
 
     def skip(line, skip):
         return line[skip:]
@@ -349,48 +352,45 @@ def get_password(request, mapping) -> None:
     LOGGER.debug('Iterating mapping to match against host "%s"', host)
     for section in mapping.sections():
         if fnmatch.fnmatch(host, section):
-            LOGGER.debug('Section "%s" matches requested host "%s"',
-                         section, host)
+            LOGGER.debug('Section "%s" matches requested host "%s"', section, host)
             # TODO handle exceptions
-            pass_target = mapping.get(section, 'target').replace(
-                "${host}", request['host'])
-            if 'username' in request:
-                pass_target = pass_target.replace(
-                    "${username}", request['username'])
+            pass_target = mapping.get(section, "target").replace(
+                "${host}", request["host"]
+            )
+            if "username" in request:
+                pass_target = pass_target.replace("${username}", request["username"])
 
-            password_extractor = SpecificLineExtractor(
-                0, 0, option_suffix='_password')
+            password_extractor = SpecificLineExtractor(0, 0, option_suffix="_password")
             password_extractor.configure(mapping[section])
-            # username_extractor = SpecificLineExtractor(
-            #     1, 0, option_suffix='_username')
-            username_extractor = _username_extractors[mapping[section].get(
-                'username_extractor', fallback=_line_extractor_name)]
+            username_extractor = _username_extractors[
+                mapping[section].get(
+                    "username_extractor", fallback=_line_extractor_name
+                )
+            ]
             username_extractor.configure(mapping[section])
 
             LOGGER.debug('Requesting entry "%s" from pass', pass_target)
-            output = subprocess.check_output(
-                ['pass', 'show', pass_target]).decode('utf-8')
+            output = subprocess.check_output(["pass", "show", pass_target]).decode(
+                "utf-8"
+            )
             lines = output.splitlines()
 
             password = password_extractor.get_value(pass_target, lines)
             username = username_extractor.get_value(pass_target, lines)
             if password:
-                print('password={password}'.format(  # noqa: T001
-                    password=password))
-            if 'username' not in request and username:
-                print('username={username}'.format(  # noqa: T001
-                    username=username))
+                print("password={password}".format(password=password))  # noqa: T001
+            if "username" not in request and username:
+                print("username={username}".format(username=username))  # noqa: T001
             return
 
-    LOGGER.warning('No mapping matched')
+    LOGGER.warning("No mapping matched")
     sys.exit(1)
 
 
 def handle_skip() -> None:
     """Terminate the process if skipping is requested via an env variable."""
-    if 'PASS_GIT_HELPER_SKIP' in os.environ:
-        LOGGER.info(
-            'Skipping processing as requested via environment variable')
+    if "PASS_GIT_HELPER_SKIP" in os.environ:
+        LOGGER.info("Skipping processing as requested via environment variable")
         sys.exit(1)
 
 
@@ -412,25 +412,23 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
     action = args.action
     request = parse_request()
-    LOGGER.debug('Received action %s with request:\n%s',
-                 action, request)
+    LOGGER.debug("Received action %s with request:\n%s", action, request)
 
     try:
         mapping = parse_mapping(args.mapping)
     except Exception as error:
-        LOGGER.critical('Unable to parse mapping file', exc_info=True)
+        LOGGER.critical("Unable to parse mapping file", exc_info=True)
         print(  # noqa: T001
-            'Unable to parse mapping file: {error}'.format(
-                error=error),
-            file=sys.stderr)
+            "Unable to parse mapping file: {error}".format(error=error), file=sys.stderr
+        )
         sys.exit(1)
 
-    if action == 'get':
+    if action == "get":
         get_password(request, mapping)
     else:
-        LOGGER.info('Action %s is currently not supported', action)
+        LOGGER.info("Action %s is currently not supported", action)
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
