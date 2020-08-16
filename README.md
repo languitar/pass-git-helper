@@ -9,8 +9,15 @@ This is achieved by explicitly defining mappings between hosts and entries in th
 
 ## Preconditions
 
-GPG must be configured to use a graphical pinentry dialog.
-The shell cannot be used due to the interaction required by [git].
+It is recommended to configure GPG to use a graphical pinentry program.
+That way, you can also use this helper when [git] is invoked via GUI programs such as your IDE.
+For a configuration example, refer to the [ArchWiki](https://wiki.archlinux.org/index.php/GnuPG#pinentry).
+In case you really want to use the terminal for pinentry (via `pinentry-curses`), be sure to [appropriately configure the environment variable `GPG_TTY`](https://www.gnupg.org/documentation/manuals/gnupg/Invoking-GPG_002dAGENT.html), most likely by adding the following lines to your shell initialization:
+```sh
+GPG_TTY=$(tty)
+export GPG_TTY
+```
+If you use this setup for remote work via SSH, also consider the alternative of [GPG agent forwarding](https://wiki.gnupg.org/AgentForwarding).
 
 ## Installation
 
