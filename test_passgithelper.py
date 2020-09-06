@@ -106,7 +106,9 @@ class TestEntryNameExtractor:
 
 
 @pytest.mark.parametrize(
-    "xdg_dir", [None], indirect=True,
+    "xdg_dir",
+    [None],
+    indirect=True,
 )
 def test_parse_mapping_file_missing(xdg_dir):
     with pytest.raises(RuntimeError):
@@ -114,7 +116,9 @@ def test_parse_mapping_file_missing(xdg_dir):
 
 
 @pytest.mark.parametrize(
-    "xdg_dir", ["test_data/smoke"], indirect=True,
+    "xdg_dir",
+    ["test_data/smoke"],
+    indirect=True,
 )
 def test_parse_mapping_from_xdg(xdg_dir):
     config = passgithelper.parse_mapping(None)
@@ -138,7 +142,9 @@ class TestScript:
         assert not err
 
     @pytest.mark.parametrize(
-        "xdg_dir", ["test_data/smoke"], indirect=True,
+        "xdg_dir",
+        ["test_data/smoke"],
+        indirect=True,
     )
     def test_smoke_resolve(self, xdg_dir, monkeypatch, mocker, capsys):
         monkeypatch.setattr(
@@ -161,7 +167,9 @@ host=mytest.com"""
         assert out == "password=narf\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir", ["test_data/smoke"], indirect=True,
+        "xdg_dir",
+        ["test_data/smoke"],
+        indirect=True,
     )
     def test_path_used_if_present_fails(self, xdg_dir, monkeypatch, caplog):
         monkeypatch.setattr(
@@ -182,7 +190,9 @@ path=/foo/bar.git"""
             ]
 
     @pytest.mark.parametrize(
-        "xdg_dir", ["test_data/with-path"], indirect=True,
+        "xdg_dir",
+        ["test_data/with-path"],
+        indirect=True,
     )
     def test_path_used_if_present(self, xdg_dir, monkeypatch, mocker, capsys):
         monkeypatch.setattr(
@@ -207,7 +217,9 @@ path=subpath/bar.git"""
         assert out == "password=narf\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir", ["test_data/wildcard"], indirect=True,
+        "xdg_dir",
+        ["test_data/wildcard"],
+        indirect=True,
     )
     def test_wildcard_matching(self, xdg_dir, monkeypatch, mocker, capsys):
         monkeypatch.setattr(
@@ -235,7 +247,9 @@ path=subpath/bar.git"""
         assert out == "password=narf-wildcard\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir", ["test_data/with-username"], indirect=True,
+        "xdg_dir",
+        ["test_data/with-username"],
+        indirect=True,
     )
     def test_username_provided(self, xdg_dir, monkeypatch, mocker, capsys):
         monkeypatch.setattr(
@@ -259,7 +273,9 @@ host=plainline.com"""
         assert out == "password=password\nusername=username\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir", ["test_data/with-username"], indirect=True,
+        "xdg_dir",
+        ["test_data/with-username"],
+        indirect=True,
     )
     def test_username_skipped_if_provided(self, xdg_dir, monkeypatch, mocker, capsys):
         monkeypatch.setattr(
@@ -284,7 +300,9 @@ username=narf"""
         assert out == "password=password\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir", ["test_data/with-username"], indirect=True,
+        "xdg_dir",
+        ["test_data/with-username"],
+        indirect=True,
     )
     def test_custom_mapping_used(self, xdg_dir, monkeypatch, mocker, capsys):
         # this would fail for the default file from with-username
@@ -308,7 +326,9 @@ host=mytest.com"""
         assert out == "password=narf\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir", ["test_data/with-username-skip"], indirect=True,
+        "xdg_dir",
+        ["test_data/with-username-skip"],
+        indirect=True,
     )
     def test_prefix_skipping(self, xdg_dir, monkeypatch, mocker, capsys):
         monkeypatch.setattr(
@@ -331,7 +351,9 @@ host=mytest.com"""
         assert out == "password=xyz\nusername=tester\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir", ["test_data/unknown-username-extractor"], indirect=True,
+        "xdg_dir",
+        ["test_data/unknown-username-extractor"],
+        indirect=True,
     )
     def test_select_unknown_extractor(self, xdg_dir, monkeypatch, capsys):
         monkeypatch.setattr(
@@ -347,7 +369,9 @@ host=mytest.com"""
             passgithelper.main(["get"])
 
     @pytest.mark.parametrize(
-        "xdg_dir", ["test_data/regex-extraction"], indirect=True,
+        "xdg_dir",
+        ["test_data/regex-extraction"],
+        indirect=True,
     )
     def test_regex_username_selection(self, xdg_dir, monkeypatch, mocker, capsys):
         monkeypatch.setattr(
@@ -372,7 +396,9 @@ host=mytest.com"""
         assert out == "password=xyz\nusername=tester\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir", ["test_data/entry-name-extraction"], indirect=True,
+        "xdg_dir",
+        ["test_data/entry-name-extraction"],
+        indirect=True,
     )
     def test_entry_name_is_user(self, xdg_dir, monkeypatch, mocker, capsys):
         monkeypatch.setattr(
