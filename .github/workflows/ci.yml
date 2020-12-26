@@ -1,8 +1,8 @@
 name: CI build
 
 on:
-  push: {}
-  pull_request: {}
+  push:
+  pull_request:
   schedule:
     - cron: '0 0 * * 0'
 
