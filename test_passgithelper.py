@@ -1,6 +1,5 @@
 import configparser
 import io
-import logging
 from typing import Any, Optional, Sequence, Text
 
 import pytest
@@ -9,8 +8,8 @@ from pytest_mock import MockFixture
 import passgithelper
 
 
-@pytest.fixture
-def xdg_dir(request: Any, mocker: MockFixture) -> None:
+@pytest.fixture()
+def _xdg_dir(request: Any, mocker: MockFixture) -> None:
     xdg_mock = mocker.patch("xdg.BaseDirectory.load_first_config")
     xdg_mock.return_value = request.param
 
@@ -80,7 +79,7 @@ class TestRegexSearchExtractor:
         )
 
     def test_missing_group(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="must contain"):
             passgithelper.RegexSearchExtractor("^username: .*$", "")
 
     def test_configuration(self) -> None:
@@ -100,7 +99,7 @@ regex_username=^foo: (.*)$"""
             r"""[test]
 regex_username=^foo: .*$"""
         )
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="must contain"):
             extractor.configure(config["test"])
 
 
@@ -110,21 +109,23 @@ class TestEntryNameExtractor:
 
 
 @pytest.mark.parametrize(
-    "xdg_dir",
+    "_xdg_dir",
     [None],
     indirect=True,
 )
-def test_parse_mapping_file_missing(xdg_dir: None) -> None:
+@pytest.mark.usefixtures("_xdg_dir")
+def test_parse_mapping_file_missing() -> None:
     with pytest.raises(RuntimeError):
         passgithelper.parse_mapping(None)
 
 
 @pytest.mark.parametrize(
-    "xdg_dir",
+    "_xdg_dir",
     ["test_data/smoke"],
     indirect=True,
 )
-def test_parse_mapping_from_xdg(xdg_dir: None) -> None:
+@pytest.mark.usefixtures("_xdg_dir")
+def test_parse_mapping_from_xdg() -> None:
     config = passgithelper.parse_mapping(None)
     assert "mytest.com" in config
     assert config["mytest.com"]["target"] == "dev/mytest"
@@ -146,12 +147,13 @@ class TestScript:
         assert not err
 
     @pytest.mark.parametrize(
-        "xdg_dir",
+        "_xdg_dir",
         ["test_data/smoke"],
         indirect=True,
     )
+    @pytest.mark.usefixtures("_xdg_dir")
     def test_smoke_resolve(
-        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+        self, monkeypatch: Any, mocker: MockFixture, capsys: Any
     ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
@@ -173,13 +175,12 @@ host=mytest.com"""
         assert out == "password=narf\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir",
+        "_xdg_dir",
         ["test_data/smoke"],
         indirect=True,
     )
-    def test_path_used_if_present_fails(
-        self, xdg_dir: None, monkeypatch: Any, caplog: Any
-    ) -> None:
+    @pytest.mark.usefixtures("_xdg_dir")
+    def test_path_used_if_present_fails(self, monkeypatch: Any) -> None:
         monkeypatch.setattr(
             "sys.stdin",
             io.StringIO(
@@ -190,20 +191,17 @@ path=/foo/bar.git"""
             ),
         )
 
-        with caplog.at_level(logging.WARNING):
-            with pytest.raises(SystemExit):
-                passgithelper.main(["get"])
-            assert caplog.record_tuples == [
-                ("root", logging.WARNING, "No mapping matched"),
-            ]
+        with pytest.raises(ValueError, match="No mapping section"):
+            passgithelper.main(["get"])
 
     @pytest.mark.parametrize(
-        "xdg_dir",
+        "_xdg_dir",
         ["test_data/with-path"],
         indirect=True,
     )
+    @pytest.mark.usefixtures("_xdg_dir")
     def test_path_used_if_present(
-        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+        self, monkeypatch: Any, mocker: MockFixture, capsys: Any
     ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
@@ -227,12 +225,13 @@ path=subpath/bar.git"""
         assert out == "password=narf\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir",
+        "_xdg_dir",
         ["test_data/wildcard"],
         indirect=True,
     )
+    @pytest.mark.usefixtures("_xdg_dir")
     def test_wildcard_matching(
-        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+        self, monkeypatch: Any, mocker: MockFixture, capsys: Any
     ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
@@ -259,12 +258,13 @@ path=subpath/bar.git"""
         assert out == "password=narf-wildcard\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir",
+        "_xdg_dir",
         ["test_data/with-username"],
         indirect=True,
     )
+    @pytest.mark.usefixtures("_xdg_dir")
     def test_username_provided(
-        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+        self, monkeypatch: Any, mocker: MockFixture, capsys: Any
     ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
@@ -287,12 +287,13 @@ host=plainline.com"""
         assert out == "password=password\nusername=username\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir",
+        "_xdg_dir",
         ["test_data/with-username"],
         indirect=True,
     )
+    @pytest.mark.usefixtures("_xdg_dir")
     def test_username_skipped_if_provided(
-        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+        self, monkeypatch: Any, mocker: MockFixture, capsys: Any
     ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
@@ -316,12 +317,13 @@ username=narf"""
         assert out == "password=password\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir",
+        "_xdg_dir",
         ["test_data/with-username"],
         indirect=True,
     )
+    @pytest.mark.usefixtures("_xdg_dir")
     def test_custom_mapping_used(
-        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+        self, monkeypatch: Any, mocker: MockFixture, capsys: Any
     ) -> None:
         # this would fail for the default file from with-username
         monkeypatch.setattr(
@@ -344,12 +346,13 @@ host=mytest.com"""
         assert out == "password=narf\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir",
+        "_xdg_dir",
         ["test_data/with-username-skip"],
         indirect=True,
     )
+    @pytest.mark.usefixtures("_xdg_dir")
     def test_prefix_skipping(
-        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+        self, monkeypatch: Any, mocker: MockFixture, capsys: Any
     ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
@@ -371,13 +374,12 @@ host=mytest.com"""
         assert out == "password=xyz\nusername=tester\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir",
+        "_xdg_dir",
         ["test_data/unknown-username-extractor"],
         indirect=True,
     )
-    def test_select_unknown_extractor(
-        self, xdg_dir: None, monkeypatch: Any, capsys: Any
-    ) -> None:
+    @pytest.mark.usefixtures("_xdg_dir")
+    def test_select_unknown_extractor(self, monkeypatch: Any, capsys: Any) -> None:
         monkeypatch.setattr(
             "sys.stdin",
             io.StringIO(
@@ -391,12 +393,13 @@ host=mytest.com"""
             passgithelper.main(["get"])
 
     @pytest.mark.parametrize(
-        "xdg_dir",
+        "_xdg_dir",
         ["test_data/regex-extraction"],
         indirect=True,
     )
+    @pytest.mark.usefixtures("_xdg_dir")
     def test_regex_username_selection(
-        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+        self, monkeypatch: Any, mocker: MockFixture, capsys: Any
     ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
@@ -420,12 +423,13 @@ host=mytest.com"""
         assert out == "password=xyz\nusername=tester\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir",
+        "_xdg_dir",
         ["test_data/entry-name-extraction"],
         indirect=True,
     )
+    @pytest.mark.usefixtures("_xdg_dir")
     def test_entry_name_is_user(
-        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+        self, monkeypatch: Any, mocker: MockFixture, capsys: Any
     ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
@@ -447,12 +451,13 @@ host=mytest.com"""
         assert out == "password=xyz\nusername=myuser\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir",
+        "_xdg_dir",
         ["test_data/with-encoding"],
         indirect=True,
     )
+    @pytest.mark.usefixtures("_xdg_dir")
     def test_uses_configured_encoding(
-        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+        self, monkeypatch: Any, mocker: MockFixture, capsys: Any
     ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
@@ -475,12 +480,13 @@ host=mytest.com"""
         assert out == f"password={password}\n"
 
     @pytest.mark.parametrize(
-        "xdg_dir",
+        "_xdg_dir",
         ["test_data/smoke"],
         indirect=True,
     )
+    @pytest.mark.usefixtures("_xdg_dir")
     def test_uses_utf8_by_default(
-        self, xdg_dir: None, mocker: MockFixture, monkeypatch: Any, capsys: Any
+        self, mocker: MockFixture, monkeypatch: Any, capsys: Any
     ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
