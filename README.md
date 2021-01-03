@@ -23,17 +23,27 @@ If you use this setup for remote work via SSH, also consider the alternative of 
 
 ## Installation
 
-System-wide:
+### Official Packages
+
+If possible, use an available package for your Linux distribution or operating system such as the ones linked above via badges.
+
+### From Source
+
 ```sh
-sudo python3 setup.py install
+sudo pip install .
 ```
 
-For a single user:
+This might potentially install Python packages without the knowledge of your system's package manager.
+If all package preconditions are already met, you can also copy the script file to to your system to avoid this problem:
 ```sh
-python3 setup.py install --user
+sudo cp passgithelper.py /usr/local/bin/pass-git-helper
 ```
 
-Ensure that `~/.local/bin` is in your `PATH` for the single-user installation.
+Another option is to install the script in an isolated [virtualenv](https://virtualenv.pypa.io/en/latest/):
+```sh
+virtualenv /your/env
+/your/env/pip install .
+```
 
 ## Usage
 
