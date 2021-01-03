@@ -371,7 +371,7 @@ def get_password(request, mapping) -> None:
 
             LOGGER.debug('Requesting entry "%s" from pass', pass_target)
             output = subprocess.check_output(["pass", "show", pass_target]).decode(
-                "utf-8"
+                mapping[section].get("encoding", "UTF-8")
             )
             lines = output.splitlines()
 
