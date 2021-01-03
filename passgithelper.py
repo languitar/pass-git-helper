@@ -17,7 +17,7 @@ import os.path
 import re
 import subprocess
 import sys
-from typing import Dict, Optional, Pattern, Sequence, Text
+from typing import Dict, IO, Mapping, Optional, Pattern, Sequence, Text
 
 import xdg.BaseDirectory
 
@@ -70,12 +70,10 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Action to preform as specified in the git credential API",
     )
 
-    args = parser.parse_args(argv)
-
-    return args
+    return parser.parse_args(argv)
 
 
-def parse_mapping(mapping_file: Optional[str]) -> configparser.ConfigParser:
+def parse_mapping(mapping_file: Optional[IO]) -> configparser.ConfigParser:
     """
     Parse the file containing the mappings from hosts to pass entries.
 
@@ -86,7 +84,7 @@ def parse_mapping(mapping_file: Optional[str]) -> configparser.ConfigParser:
     """
     LOGGER.debug("Parsing mapping file. Command line: %s", mapping_file)
 
-    def parse(mapping_file):
+    def parse(mapping_file: IO) -> configparser.ConfigParser:
         config = configparser.ConfigParser()
         config.read_file(mapping_file)
         return config
@@ -103,9 +101,9 @@ def parse_mapping(mapping_file: Optional[str]) -> configparser.ConfigParser:
             "No mapping configured so far at any XDG config location. "
             "Please create {config_file}".format(config_file=DEFAULT_CONFIG_FILE)
         )
-    mapping_file = os.path.join(xdg_config_dir, CONFIG_FILE_NAME)
+    default_file = os.path.join(xdg_config_dir, CONFIG_FILE_NAME)
     LOGGER.debug("Parsing mapping file %s", mapping_file)
-    with open(mapping_file, "r") as file_handle:
+    with open(default_file, "r") as file_handle:
         return parse(file_handle)
 
 
@@ -196,7 +194,7 @@ class SkippingDataExtractor(DataExtractor):
         self._prefix_length = prefix_length
 
     @abc.abstractmethod
-    def configure(self, config: configparser.SectionProxy):
+    def configure(self, config: configparser.SectionProxy) -> None:
         """Configure the amount of characters to skip."""
         self._prefix_length = config.getint(
             "skip{suffix}".format(suffix=self._option_suffix),
@@ -325,7 +323,51 @@ _username_extractors = {
 }
 
 
-def get_password(request, mapping) -> None:
+def find_mapping_section(
+    mapping: configparser.ConfigParser, request_header: str
+) -> configparser.SectionProxy:
+    """Select the mapping entry matching the request header."""
+
+    LOGGER.debug('Searching mapping to match against header "%s"', request_header)
+    for section in mapping.sections():
+        if fnmatch.fnmatch(request_header, section):
+            LOGGER.debug(
+                'Section "%s" matches requested header "%s"', section, request_header
+            )
+            return mapping[section]
+
+    raise ValueError(
+        f"No mapping section in {mapping.sections()} matches request {request_header}"
+    )
+
+
+def get_request_section_header(request: Mapping[str, str]) -> str:
+    """Return the canonical host + optional path for section header matching."""
+
+    if "host" not in request:
+        LOGGER.error("host= entry missing in request. Cannot query without a host")
+        raise ValueError("Request lacks host entry")
+
+    host = request["host"]
+    if "path" in request:
+        host = "/".join([host, request["path"]])
+    return host
+
+
+def define_pass_target(
+    section: configparser.SectionProxy, request: Mapping[str, str]
+) -> str:
+    """Determine the pass target by filling in potentially used variables."""
+
+    pass_target = section.get("target").replace("${host}", request["host"])
+    if "username" in request:
+        pass_target = pass_target.replace("${username}", request["username"])
+    return pass_target
+
+
+def get_password(
+    request: Mapping[str, str], mapping: configparser.ConfigParser
+) -> None:
     """
     Resolve the given credential request in the provided mapping definition.
 
@@ -337,54 +379,35 @@ def get_password(request, mapping) -> None:
         mapping:
             The mapping configuration as a ConfigParser instance.
     """
+
     LOGGER.debug('Received request "%s"', request)
-    if "host" not in request:
-        LOGGER.error("host= entry missing in request. Cannot query without a host")
-        return
 
-    host = request["host"]
-    if "path" in request:
-        host = "/".join([host, request["path"]])
+    header = get_request_section_header(request)
+    section = find_mapping_section(mapping, header)
 
-    def skip(line, skip):
-        return line[skip:]
+    pass_target = define_pass_target(section, request)
 
-    LOGGER.debug('Iterating mapping to match against host "%s"', host)
-    for section in mapping.sections():
-        if fnmatch.fnmatch(host, section):
-            LOGGER.debug('Section "%s" matches requested host "%s"', section, host)
-            # TODO handle exceptions
-            pass_target = mapping.get(section, "target").replace(
-                "${host}", request["host"]
-            )
-            if "username" in request:
-                pass_target = pass_target.replace("${username}", request["username"])
+    password_extractor = SpecificLineExtractor(0, 0, option_suffix="_password")
+    password_extractor.configure(section)
+    username_extractor = _username_extractors[
+        section.get("username_extractor", fallback=_line_extractor_name)
+    ]
+    username_extractor.configure(section)
 
-            password_extractor = SpecificLineExtractor(0, 0, option_suffix="_password")
-            password_extractor.configure(mapping[section])
-            username_extractor = _username_extractors[
-                mapping[section].get(
-                    "username_extractor", fallback=_line_extractor_name
-                )
-            ]
-            username_extractor.configure(mapping[section])
+    LOGGER.debug('Requesting entry "%s" from pass', pass_target)
+    # silence the subprocess injection warnings as it is the user's
+    # responsibility to provide a safe mapping and execution environment
+    output = subprocess.check_output(  # noqa: S603, S607
+        ["pass", "show", pass_target]
+    ).decode(section.get("encoding", "UTF-8"))
+    lines = output.splitlines()
 
-            LOGGER.debug('Requesting entry "%s" from pass', pass_target)
-            output = subprocess.check_output(["pass", "show", pass_target]).decode(
-                mapping[section].get("encoding", "UTF-8")
-            )
-            lines = output.splitlines()
-
-            password = password_extractor.get_value(pass_target, lines)
-            username = username_extractor.get_value(pass_target, lines)
-            if password:
-                print("password={password}".format(password=password))  # noqa: T001
-            if "username" not in request and username:
-                print("username={username}".format(username=username))  # noqa: T001
-            return
-
-    LOGGER.warning("No mapping matched")
-    sys.exit(1)
+    password = password_extractor.get_value(pass_target, lines)
+    username = username_extractor.get_value(pass_target, lines)
+    if password:
+        print("password={password}".format(password=password))  # noqa: T001
+    if "username" not in request and username:
+        print("username={username}".format(username=username))  # noqa: T001
 
 
 def handle_skip() -> None:
