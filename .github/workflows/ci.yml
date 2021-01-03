@@ -7,7 +7,7 @@ on:
     - cron: '0 0 * * 0'
 
 jobs:
-  lint:
+  lint-code:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,6 +23,17 @@ jobs:
           pip install tox
       - name: Lint with tox
         run: tox -e check
+
+  lint-readme:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clone repo
+        uses: actions/checkout@v2
+      - name: Lint README.md
+        uses: docker://avtodev/markdown-lint:v1
+        with:
+          args: './README.md'
 
   test:
     runs-on: ubuntu-latest
