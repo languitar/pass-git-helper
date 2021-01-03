@@ -1,25 +1,27 @@
 import configparser
 import io
 import logging
+from typing import Any, Optional, Sequence, Text
 
 import pytest
+from pytest_mock import MockFixture
 
 import passgithelper
 
 
 @pytest.fixture
-def xdg_dir(request, mocker):
+def xdg_dir(request: Any, mocker: MockFixture) -> None:
     xdg_mock = mocker.patch("xdg.BaseDirectory.load_first_config")
     xdg_mock.return_value = request.param
 
 
-def test_handle_skip_nothing(monkeypatch):
+def test_handle_skip_nothing(monkeypatch: Any) -> None:
     monkeypatch.delenv("PASS_GIT_HELPER_SKIP", raising=False)
     passgithelper.handle_skip()
     # should do nothing normally
 
 
-def test_handle_skip_exits(monkeypatch):
+def test_handle_skip_exits(monkeypatch: Any) -> None:
     monkeypatch.setenv("PASS_GIT_HELPER_SKIP", "1")
     with pytest.raises(SystemExit):
         passgithelper.handle_skip()
@@ -27,20 +29,22 @@ def test_handle_skip_exits(monkeypatch):
 
 class TestSkippingDataExtractor:
     class ExtractorImplementation(passgithelper.SkippingDataExtractor):
-        def configure(self, config):
+        def configure(self, config: configparser.SectionProxy) -> None:
             pass
 
-        def __init__(self, skip_characters: int = 0):
+        def __init__(self, skip_characters: int = 0) -> None:
             super().__init__(skip_characters)
 
-        def _get_raw(self, entry_text, entry_lines):
+        def _get_raw(
+            self, entry_text: Text, entry_lines: Sequence[Text]
+        ) -> Optional[Text]:
             return entry_lines[0]
 
-    def test_smoke(self):
+    def test_smoke(self) -> None:
         extractor = self.ExtractorImplementation(4)
         assert extractor.get_value("foo", ["testthis"]) == "this"
 
-    def test_too_short(self):
+    def test_too_short(self) -> None:
         extractor = self.ExtractorImplementation(8)
         assert extractor.get_value("foo", ["testthis"]) == ""
         extractor = self.ExtractorImplementation(10)
@@ -48,19 +52,19 @@ class TestSkippingDataExtractor:
 
 
 class TestSpecificLineExtractor:
-    def test_smoke(self):
+    def test_smoke(self) -> None:
         extractor = passgithelper.SpecificLineExtractor(1, 6)
         assert (
             extractor.get_value("foo", ["line 1", "user: bar", "more lines"]) == "bar"
         )
 
-    def test_no_such_line(self):
+    def test_no_such_line(self) -> None:
         extractor = passgithelper.SpecificLineExtractor(3, 6)
         assert extractor.get_value("foo", ["line 1", "user: bar", "more lines"]) is None
 
 
 class TestRegexSearchExtractor:
-    def test_smoke(self):
+    def test_smoke(self) -> None:
         extractor = passgithelper.RegexSearchExtractor("^username: (.*)$", "")
         assert (
             extractor.get_value(
@@ -75,11 +79,11 @@ class TestRegexSearchExtractor:
             == "user"
         )
 
-    def test_missing_group(self):
+    def test_missing_group(self) -> None:
         with pytest.raises(ValueError):
             passgithelper.RegexSearchExtractor("^username: .*$", "")
 
-    def test_configuration(self):
+    def test_configuration(self) -> None:
         extractor = passgithelper.RegexSearchExtractor("^username: (.*)$", "_username")
         config = configparser.ConfigParser()
         config.read_string(
@@ -89,7 +93,7 @@ regex_username=^foo: (.*)$"""
         extractor.configure(config["test"])
         assert extractor._regex.pattern == r"^foo: (.*)$"
 
-    def test_configuration_checks_groups(self):
+    def test_configuration_checks_groups(self) -> None:
         extractor = passgithelper.RegexSearchExtractor("^username: (.*)$", "_username")
         config = configparser.ConfigParser()
         config.read_string(
@@ -101,7 +105,7 @@ regex_username=^foo: .*$"""
 
 
 class TestEntryNameExtractor:
-    def test_smoke(self):
+    def test_smoke(self) -> None:
         assert passgithelper.EntryNameExtractor().get_value("foo/bar", []) == "bar"
 
 
@@ -110,7 +114,7 @@ class TestEntryNameExtractor:
     [None],
     indirect=True,
 )
-def test_parse_mapping_file_missing(xdg_dir):
+def test_parse_mapping_file_missing(xdg_dir: None) -> None:
     with pytest.raises(RuntimeError):
         passgithelper.parse_mapping(None)
 
@@ -120,20 +124,20 @@ def test_parse_mapping_file_missing(xdg_dir):
     ["test_data/smoke"],
     indirect=True,
 )
-def test_parse_mapping_from_xdg(xdg_dir):
+def test_parse_mapping_from_xdg(xdg_dir: None) -> None:
     config = passgithelper.parse_mapping(None)
     assert "mytest.com" in config
     assert config["mytest.com"]["target"] == "dev/mytest"
 
 
 class TestScript:
-    def test_help(self, capsys):
+    def test_help(self, capsys: Any) -> None:
         with pytest.raises(SystemExit):
             passgithelper.main(["--help"])
 
         assert "usage: " in capsys.readouterr().out
 
-    def test_skip(self, monkeypatch, capsys):
+    def test_skip(self, monkeypatch: Any, capsys: Any) -> None:
         monkeypatch.setenv("PASS_GIT_HELPER_SKIP", "1")
         with pytest.raises(SystemExit):
             passgithelper.main(["get"])
@@ -146,7 +150,9 @@ class TestScript:
         ["test_data/smoke"],
         indirect=True,
     )
-    def test_smoke_resolve(self, xdg_dir, monkeypatch, mocker, capsys):
+    def test_smoke_resolve(
+        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+    ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
             io.StringIO(
@@ -171,7 +177,9 @@ host=mytest.com"""
         ["test_data/smoke"],
         indirect=True,
     )
-    def test_path_used_if_present_fails(self, xdg_dir, monkeypatch, caplog):
+    def test_path_used_if_present_fails(
+        self, xdg_dir: None, monkeypatch: Any, caplog: Any
+    ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
             io.StringIO(
@@ -194,7 +202,9 @@ path=/foo/bar.git"""
         ["test_data/with-path"],
         indirect=True,
     )
-    def test_path_used_if_present(self, xdg_dir, monkeypatch, mocker, capsys):
+    def test_path_used_if_present(
+        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+    ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
             io.StringIO(
@@ -221,7 +231,9 @@ path=subpath/bar.git"""
         ["test_data/wildcard"],
         indirect=True,
     )
-    def test_wildcard_matching(self, xdg_dir, monkeypatch, mocker, capsys):
+    def test_wildcard_matching(
+        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+    ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
             io.StringIO(
@@ -251,7 +263,9 @@ path=subpath/bar.git"""
         ["test_data/with-username"],
         indirect=True,
     )
-    def test_username_provided(self, xdg_dir, monkeypatch, mocker, capsys):
+    def test_username_provided(
+        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+    ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
             io.StringIO(
@@ -277,7 +291,9 @@ host=plainline.com"""
         ["test_data/with-username"],
         indirect=True,
     )
-    def test_username_skipped_if_provided(self, xdg_dir, monkeypatch, mocker, capsys):
+    def test_username_skipped_if_provided(
+        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+    ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
             io.StringIO(
@@ -304,7 +320,9 @@ username=narf"""
         ["test_data/with-username"],
         indirect=True,
     )
-    def test_custom_mapping_used(self, xdg_dir, monkeypatch, mocker, capsys):
+    def test_custom_mapping_used(
+        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+    ) -> None:
         # this would fail for the default file from with-username
         monkeypatch.setattr(
             "sys.stdin",
@@ -330,7 +348,9 @@ host=mytest.com"""
         ["test_data/with-username-skip"],
         indirect=True,
     )
-    def test_prefix_skipping(self, xdg_dir, monkeypatch, mocker, capsys):
+    def test_prefix_skipping(
+        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+    ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
             io.StringIO(
@@ -355,7 +375,9 @@ host=mytest.com"""
         ["test_data/unknown-username-extractor"],
         indirect=True,
     )
-    def test_select_unknown_extractor(self, xdg_dir, monkeypatch, capsys):
+    def test_select_unknown_extractor(
+        self, xdg_dir: None, monkeypatch: Any, capsys: Any
+    ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
             io.StringIO(
@@ -373,7 +395,9 @@ host=mytest.com"""
         ["test_data/regex-extraction"],
         indirect=True,
     )
-    def test_regex_username_selection(self, xdg_dir, monkeypatch, mocker, capsys):
+    def test_regex_username_selection(
+        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+    ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
             io.StringIO(
@@ -400,7 +424,9 @@ host=mytest.com"""
         ["test_data/entry-name-extraction"],
         indirect=True,
     )
-    def test_entry_name_is_user(self, xdg_dir, monkeypatch, mocker, capsys):
+    def test_entry_name_is_user(
+        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
+    ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
             io.StringIO(
@@ -426,7 +452,7 @@ host=mytest.com"""
         indirect=True,
     )
     def test_uses_configured_encoding(
-        self, xdg_dir, monkeypatch, mocker, capsys
+        self, xdg_dir: None, monkeypatch: Any, mocker: MockFixture, capsys: Any
     ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
@@ -453,7 +479,9 @@ host=mytest.com"""
         ["test_data/smoke"],
         indirect=True,
     )
-    def test_uses_utf8_by_default(self, xdg_dir, mocker, monkeypatch, capsys) -> None:
+    def test_uses_utf8_by_default(
+        self, xdg_dir: None, mocker: MockFixture, monkeypatch: Any, capsys: Any
+    ) -> None:
         monkeypatch.setattr(
             "sys.stdin",
             io.StringIO(

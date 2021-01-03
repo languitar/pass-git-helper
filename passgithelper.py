@@ -17,7 +17,7 @@ import os.path
 import re
 import subprocess
 import sys
-from typing import Dict, Optional, Pattern, Sequence, Text
+from typing import Dict, IO, Mapping, Optional, Pattern, Sequence, Text
 
 import xdg.BaseDirectory
 
@@ -75,7 +75,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return args
 
 
-def parse_mapping(mapping_file: Optional[str]) -> configparser.ConfigParser:
+def parse_mapping(mapping_file: Optional[IO]) -> configparser.ConfigParser:
     """
     Parse the file containing the mappings from hosts to pass entries.
 
@@ -86,7 +86,7 @@ def parse_mapping(mapping_file: Optional[str]) -> configparser.ConfigParser:
     """
     LOGGER.debug("Parsing mapping file. Command line: %s", mapping_file)
 
-    def parse(mapping_file):
+    def parse(mapping_file: IO) -> configparser.ConfigParser:
         config = configparser.ConfigParser()
         config.read_file(mapping_file)
         return config
@@ -103,9 +103,9 @@ def parse_mapping(mapping_file: Optional[str]) -> configparser.ConfigParser:
             "No mapping configured so far at any XDG config location. "
             "Please create {config_file}".format(config_file=DEFAULT_CONFIG_FILE)
         )
-    mapping_file = os.path.join(xdg_config_dir, CONFIG_FILE_NAME)
+    default_file = os.path.join(xdg_config_dir, CONFIG_FILE_NAME)
     LOGGER.debug("Parsing mapping file %s", mapping_file)
-    with open(mapping_file, "r") as file_handle:
+    with open(default_file, "r") as file_handle:
         return parse(file_handle)
 
 
@@ -196,7 +196,7 @@ class SkippingDataExtractor(DataExtractor):
         self._prefix_length = prefix_length
 
     @abc.abstractmethod
-    def configure(self, config: configparser.SectionProxy):
+    def configure(self, config: configparser.SectionProxy) -> None:
         """Configure the amount of characters to skip."""
         self._prefix_length = config.getint(
             "skip{suffix}".format(suffix=self._option_suffix),
@@ -325,7 +325,9 @@ _username_extractors = {
 }
 
 
-def get_password(request, mapping) -> None:
+def get_password(
+    request: Mapping[str, str], mapping: configparser.ConfigParser
+) -> None:
     """
     Resolve the given credential request in the provided mapping definition.
 
@@ -345,9 +347,6 @@ def get_password(request, mapping) -> None:
     host = request["host"]
     if "path" in request:
         host = "/".join([host, request["path"]])
-
-    def skip(line, skip):
-        return line[skip:]
 
     LOGGER.debug('Iterating mapping to match against host "%s"', host)
     for section in mapping.sections():
