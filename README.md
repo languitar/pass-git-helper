@@ -172,6 +172,11 @@ For instance, if a regular [pass] call would be `pass show dev/github.com/langui
 
 No configuration options.
 
+### File Encoding
+
+By default, passwordstore entries are assumed to use UTF-8 encoding.
+If all or some of your entries use a different encoding, use the `encoding` key (for instance, in the `DEFAULT` section) to specify the used encoding.
+
 ## Command Line Options
 
 `-l` can be given as an option to the script to produce logging output on stderr.

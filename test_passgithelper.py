@@ -419,3 +419,58 @@ host=mytest.com"""
 
         out, _ = capsys.readouterr()
         assert out == "password=xyz\nusername=myuser\n"
+
+    @pytest.mark.parametrize(
+        "xdg_dir",
+        ["test_data/with-encoding"],
+        indirect=True,
+    )
+    def test_uses_configured_encoding(
+        self, xdg_dir, monkeypatch, mocker, capsys
+    ) -> None:
+        monkeypatch.setattr(
+            "sys.stdin",
+            io.StringIO(
+                """
+protocol=https
+host=mytest.com"""
+            ),
+        )
+        subprocess_mock = mocker.patch("subprocess.check_output")
+        password = "täßt"
+        subprocess_mock.return_value = password.encode("LATIN1")
+
+        passgithelper.main(["get"])
+
+        subprocess_mock.assert_called_once()
+        subprocess_mock.assert_called_with(["pass", "show", "dev/mytest"])
+
+        out, _ = capsys.readouterr()
+        assert out == f"password={password}\n"
+
+    @pytest.mark.parametrize(
+        "xdg_dir",
+        ["test_data/smoke"],
+        indirect=True,
+    )
+    def test_uses_utf8_by_default(self, xdg_dir, mocker, monkeypatch, capsys) -> None:
+        monkeypatch.setattr(
+            "sys.stdin",
+            io.StringIO(
+                """
+protocol=https
+host=mytest.com"""
+            ),
+        )
+
+        subprocess_mock = mocker.patch("subprocess.check_output")
+        password = "täßt"
+        subprocess_mock.return_value = password.encode("UTF-8")
+
+        passgithelper.main(["get"])
+
+        subprocess_mock.assert_called_once()
+        subprocess_mock.assert_called_with(["pass", "show", "dev/mytest"])
+
+        out, _ = capsys.readouterr()
+        assert out == f"password={password}\n"
