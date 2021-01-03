@@ -408,7 +408,6 @@ def get_password(
         print("password={password}".format(password=password))  # noqa: T001
     if "username" not in request and username:
         print("username={username}".format(username=username))  # noqa: T001
-    return
 
 
 def handle_skip() -> None:
