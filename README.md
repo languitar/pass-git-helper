@@ -4,7 +4,7 @@
 
 [![Debian CI](https://badges.debian.net/badges/debian/testing/pass-git-helper/version.svg)](https://buildd.debian.org/pass-git-helper)
 [![AUR](https://img.shields.io/aur/version/pass-git-helper.svg)](https://aur.archlinux.org/packages/pass-git-helper/)
-[![Homebrew](https://img.shields.io/badge/dynamic/json.svg?url=https://formulae.brew.sh/api/formula/pass-git-helper.json&query=$.versions.stable&label=homebrew)
+[![Homebrew](https://img.shields.io/badge/dynamic/json.svg?url=https://formulae.brew.sh/api/formula/pass-git-helper.json&query=$.versions.stable&label=homebrew)]
 
 A [git] credential helper implementation that allows using [pass] as the credential backend for your git repositories.
 This is achieved by explicitly defining mappings between hosts and entries in the password store.
