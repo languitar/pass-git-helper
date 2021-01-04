@@ -2,7 +2,7 @@
 
 # pass-git-helper
 
-[![Debian CI](https://badges.debian.net/badges/debian/testing/pass-git-helper/version.svg)](https://buildd.debian.org/pass-git-helper)
+[![Debian](https://badges.debian.net/badges/debian/testing/pass-git-helper/version.svg)](https://packages.debian.org/testing/pass-git-helper)
 [![AUR](https://img.shields.io/aur/version/pass-git-helper.svg)](https://aur.archlinux.org/packages/pass-git-helper/)
 [![Homebrew](https://img.shields.io/badge/dynamic/json.svg?url=https://formulae.brew.sh/api/formula/pass-git-helper.json&query=$.versions.stable&label=homebrew)]
 
