@@ -21,6 +21,7 @@ from typing import Dict, IO, Mapping, Optional, Pattern, Sequence, Text
 
 import xdg.BaseDirectory
 
+
 LOGGER = logging.getLogger()
 CONFIG_FILE_NAME = "git-pass-mapping.ini"
 DEFAULT_CONFIG_FILE = os.path.join(
