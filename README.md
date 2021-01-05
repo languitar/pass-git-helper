@@ -2,10 +2,6 @@
 
 # pass-git-helper
 
-[![Debian](https://badges.debian.net/badges/debian/testing/pass-git-helper/version.svg)](https://packages.debian.org/testing/pass-git-helper)
-[![AUR](https://img.shields.io/aur/version/pass-git-helper.svg)](https://aur.archlinux.org/packages/pass-git-helper/)
-[![Homebrew](https://img.shields.io/badge/dynamic/json.svg?url=https://formulae.brew.sh/api/formula/pass-git-helper.json&query=$.versions.stable&label=homebrew)](https://formulae.brew.sh/formula/pass-git-helper#default)
-
 A [git] credential helper implementation that allows using [pass] as the credential backend for your git repositories.
 This is achieved by explicitly defining mappings between hosts and entries in the password store.
 
@@ -27,7 +23,9 @@ If you use this setup for remote work via SSH, also consider the alternative of 
 
 ### Official Packages
 
-If possible, use an available package for your Linux distribution or operating system such as the ones linked above via badges.
+If possible, use an available package for your Linux distribution or operating system such as the ones linked below.
+
+[![Packaging status](https://repology.org/badge/vertical-allrepos/pass-git-helper.svg)](https://repology.org/project/pass-git-helper/versions)
 
 ### From Source
 
