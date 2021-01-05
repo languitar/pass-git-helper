@@ -1,5 +1,6 @@
 from setuptools import setup
 
+
 setup(
     name="pass-git-helper",
     version="1.2.0.dev0",
