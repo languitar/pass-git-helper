@@ -131,6 +131,26 @@ See also the offical [documentation](https://git-scm.com/docs/git-config#_includ
 Defaults suitable for all entries of the mapping file can be specified in a special section of the configuration file named `[DEFAULT]`.
 Everything configure in this section will automatically be available for all further entries in the file, but can be overriden there, too.
 
+### section with protocol
+
+github.com has deprecated passwords.
+One can use ssh or, for https, tokens.
+For tokens the protocol needs to be considered.
+A secion header for the host with the fitting protocol is used before
+a section header for the host without protocol (backward compatibility).
+
+Example for user `replace_with_your_org` with the https token saved by
+`pass insert https_github.com/replace_with_your_org`:
+
+```ini
+[DEFAULT]
+username_extractor=entry_name
+
+[https://github.com/**]
+target=${protocol}_${host}/replace_with_your_org
+```
+
+
 ## Passwordstore Layout and Data Extraction
 
 ### Password

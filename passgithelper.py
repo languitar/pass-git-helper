@@ -331,7 +331,8 @@ def find_mapping_section(
 
     LOGGER.debug('Searching mapping to match against header "%s"', request_header)
     for section in mapping.sections():
-        if fnmatch.fnmatch(request_header, section):
+        if (fnmatch.fnmatch(request_header, section)
+           or fnmatch.fnmatch(request_header+'/', section)):
             LOGGER.debug(
                 'Section "%s" matches requested header "%s"', section, request_header
             )
