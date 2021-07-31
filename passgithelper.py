@@ -342,6 +342,16 @@ def find_mapping_section(
     )
 
 
+def find_mapping_section_protocol(
+    mapping: configparser.ConfigParser, request_header: str
+) -> configparser.SectionProxy:
+    without_protocol=lambda x: '://' in x and x.split('://')[1] or x.split('://')[0]
+    try:
+        return find_mapping_section(mapping, request_header)
+    except ValueError:
+        return find_mapping_section(mapping, without_protocol(request_header))
+
+
 def get_request_section_header(request: Mapping[str, str]) -> str:
     """Return the canonical host + optional path for section header matching."""
 
@@ -352,6 +362,8 @@ def get_request_section_header(request: Mapping[str, str]) -> str:
     host = request["host"]
     if "path" in request:
         host = "/".join([host, request["path"]])
+    if "protocol" in request:
+        host = "://".join([request["protocol"],host])
     return host
 
 
@@ -363,6 +375,8 @@ def define_pass_target(
     pass_target = section.get("target").replace("${host}", request["host"])
     if "username" in request:
         pass_target = pass_target.replace("${username}", request["username"])
+    if "protocol" in request:
+        pass_target = pass_target.replace("${protocol}", request["protocol"])
     return pass_target
 
 
@@ -384,7 +398,7 @@ def get_password(
     LOGGER.debug('Received request "%s"', request)
 
     header = get_request_section_header(request)
-    section = find_mapping_section(mapping, header)
+    section = find_mapping_section_protocol(mapping, header)
 
     pass_target = define_pass_target(section, request)
 

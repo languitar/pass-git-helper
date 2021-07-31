@@ -450,3 +450,48 @@ host=mytest.com""",
 
         out, _ = capsys.readouterr()
         assert out == "password=täßt\n"
+
+    @pytest.mark.parametrize(
+        "_helper_config",
+        [
+            HelperConfig(
+                "test_data/with-protocol",
+                """
+protocol=https
+host=github.com
+path=organization/bar.git""",
+                b"github_https_token",
+                "https_github.com/organization",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("_helper_config")
+    def test_with_protocol_there(self, capsys: Any) -> None:
+        passgithelper.main(["get"])
+
+        out, _ = capsys.readouterr()
+        assert out == "password=github_https_token\nusername=organization\n"
+
+    @pytest.mark.parametrize(
+        "_helper_config",
+        [
+            HelperConfig(
+                "test_data/with-protocol",
+                """
+protocol=https
+host=myhub.com
+path=organization/bar.git""",
+                b"myhub_https_token",
+                "myhub.com/organization",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("_helper_config")
+    def test_with_protocol_not_there(self, capsys: Any) -> None:
+        passgithelper.main(["get"])
+
+        out, _ = capsys.readouterr()
+        assert out == "password=myhub_https_token\nusername=organization\n"
+
