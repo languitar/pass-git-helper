@@ -5,6 +5,44 @@
 A [git] credential helper implementation that allows using [pass] as the credential backend for your git repositories.
 This is achieved by explicitly defining mappings between hosts and entries in the password store.
 
+[pass] is a general password manager with no relation to [git].
+The directory layout of pass's ``~/.password-store`` is up to the user.
+It might consist of files `host/username.gpg` containing just the [gpg]-encrypted password.
+`pass insert --multiline ...` allows storing the username in an additional line within the file, though.
+
+Let's assume you created a `~/.password-store/github.com/username/my_api_token.gpg` file
+containing a github token with the pass command
+
+```sh
+pass insert github.com/username/my_api_token
+```
+
+And you told git to run `pass-git-helper` to get the credentials,
+instead of asking for credentials in the command line,
+using this git command
+
+```sh
+git config credential.helper '!pass-git-helper $@'
+```
+
+Git calls `pass-git-helper` providing `host=github.com` and `path=x/y.git` and `protocol` being always `https` (see [git credential protocol]).
+`pass-git-helper` returns the username and the password or token.
+You tell `pass-git-helper` with which argument to call `pass show`
+by providing a `target` line in the `[github.com*]` section
+in `$XDG_CONFIG_HOME/pass-git-helper/git-pass-mapping.ini`.
+
+
+```ini
+[DEFAULT]
+username_extractor=entry_name
+[github.com*]
+target=github.com/username/my_api_token
+```
+
+- `*` stands for all paths.
+- `entry_name` assumes that the *second* path entry is the username. See further down for alternatives.
+
+
 ## Preconditions
 
 It is recommended to configure GPG to use a graphical pinentry program.
@@ -217,3 +255,5 @@ This library is [free software](https://en.wikipedia.org/wiki/Free_software); yo
 
 [git]: https://git-scm.com/
 [pass]: http://www.passwordstore.org/ "pass - the standard unix password manager"
+[git credential protocol]: https://git-scm.com/docs/git-credential
+[gpg]: https://gnupg.org
