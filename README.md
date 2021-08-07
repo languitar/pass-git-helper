@@ -2,8 +2,10 @@
 
 # pass-git-helper
 
-A [git] credential helper implementation that allows using [pass] as the credential backend for your git repositories.
-This is achieved by explicitly defining mappings between hosts and entries in the password store.
+A [git] credential helper implementation that allows using [pass] as the credential backend for your https-based git repositories.
+When [git] tries to interact with an https-based upstream and needs credentials, this helper will be called to look up the credentials from the user's password store.
+Instead of enforcing a specific layout of the password store, a configuration file with explicitly defining mappings between hosts and entries in the password store is used, giving full flexibility to the user on how to structure or reuse existing password databases for [git] authentication.
+pass-git-helper will use the mappings to find the correct entry in the user's password store based on the request URL and then provides [git] with the credentials from this entry.
 
 ## Preconditions
 
@@ -50,7 +52,7 @@ virtualenv /your/env
 ## Usage
 
 Create the file `~/.config/pass-git-helper/git-pass-mapping.ini`.
-This file uses ini syntax to specify the mapping of hosts to entries in the passwordstore database.
+This file uses ini syntax to specify the mapping of hosts to entries in the password store database.
 Section headers define patterns which are matched against the host part of a URL with a git repository.
 Matching supports wildcards (using the python [fnmatch module](https://docs.python.org/3.7/library/fnmatch.html)).
 Each section needs to contain a `target` entry pointing to the entry in the password store with the password (and optionally username) to use.
@@ -103,7 +105,7 @@ This is especially helpful for wildcard matches:
 target=git-logins/${host}
 ```
 
-The above configuration directive will lead to any host that did not match any previous section in the ini file to being looked up under the `git-logins` directory in your passwordstore.
+The above configuration directive will lead to any host that did not match any previous section in the ini file to being looked up under the `git-logins` directory in your password store.
 
 Using the `includeIf` directive available in git >= 2.13, it is also possible to perform matching based on the current working directory by invoking `pass-git-helper` with a conditional `MAPPING-FILE`.
 To achieve this, edit your `.gitconfig`, e.g. like this:
@@ -115,7 +117,7 @@ To achieve this, edit your `.gitconfig`, e.g. like this:
     path=~/.config/git/gitconfig_user2
 ```
 
-With the following contents of `gitconfig_user1` (and `gitconfig_user2` repspectively), `mapping_user1.ini`, which could contain a `target` entry to e.g. `github.com/user1` would always be invoked in `~/src/user1`:
+With the following contents of `gitconfig_user1` (and `gitconfig_user2` respectively), `mapping_user1.ini`, which could contain a `target` entry to e.g. `github.com/user1` would always be invoked in `~/src/user1`:
 
 ```ini
 [user]
@@ -129,13 +131,13 @@ See also the offical [documentation](https://git-scm.com/docs/git-config#_includ
 ### DEFAULT section
 
 Defaults suitable for all entries of the mapping file can be specified in a special section of the configuration file named `[DEFAULT]`.
-Everything configure in this section will automatically be available for all further entries in the file, but can be overriden there, too.
+Everything configure in this section will automatically be available for all further entries in the file, but can be overridden there, too.
 
-## Passwordstore Layout and Data Extraction
+## Password Store Layout and Data Extraction
 
 ### Password
 
-As usual with [pass], this helper assumes that the password is contained in the first line of the passwordstore entry.
+As usual with [pass], this helper assumes that the password is contained in the first line of the password store entry.
 Though uncommon, it is possible to strip a prefix from the data of the first line (such as `password:` by specifying an amount of characters to leave out in the `skip_password` field for an entry or also in the `[DEFAULT]` section to apply for all entries:
 
 ```ini
@@ -153,7 +155,7 @@ target=special/noprefix
 
 `pass-git-helper` can also provide the username necessary for authenticating at a server.
 In contrast to the password, no clear convention exists how username information is stored in password entries.
-Therefore, multiple strategies to extract the username are implemented and can be selected globally for the whole passwordstore in the `[DEFAULT]` section, or individually for certain entries using the `username_extractor` key:
+Therefore, multiple strategies to extract the username are implemented and can be selected globally for the whole password store in the `[DEFAULT]` section, or individually for certain entries using the `username_extractor` key:
 
 ```ini
 [DEFAULT]
@@ -188,14 +190,14 @@ Configuration:
 
 #### Strategy "entry_name"
 
-Returns the last path fragment of the passwordstore entry as the username.
+Returns the last path fragment of the password store entry as the username.
 For instance, if a regular [pass] call would be `pass show dev/github.com/languitar`, the returned username would be `languitar`.
 
 No configuration options.
 
 ### File Encoding
 
-By default, passwordstore entries are assumed to use UTF-8 encoding.
+By default, password store entries are assumed to use UTF-8 encoding.
 If all or some of your entries use a different encoding, use the `encoding` key (for instance, in the `DEFAULT` section) to specify the used encoding.
 
 ## Command Line Options
