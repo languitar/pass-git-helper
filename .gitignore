@@ -8,3 +8,4 @@
 /.coverage
 /.python-version
 /.mypy_cache
+node_modules/
