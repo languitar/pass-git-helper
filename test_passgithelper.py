@@ -1,6 +1,7 @@
 import configparser
 from dataclasses import dataclass
 import io
+from subprocess import CalledProcessError
 from typing import Any, Iterable, Optional, Sequence, Text
 
 import pytest
@@ -13,7 +14,7 @@ import passgithelper
 class HelperConfig:
     xdg_dir: Optional[str]
     request: str
-    entry_data: bytes
+    entry_data: Optional[bytes]
     entry_name: Optional[str] = None
 
 
@@ -27,7 +28,10 @@ def _helper_config(mocker: MockFixture, request: Any) -> Iterable[None]:
     )
 
     subprocess_mock = mocker.patch("subprocess.check_output")
-    subprocess_mock.return_value = request.param.entry_data
+    if request.param.entry_data:
+        subprocess_mock.return_value = request.param.entry_data
+    else:
+        subprocess_mock.side_effect = CalledProcessError(1, ["pass"], "pass failed")
 
     yield
 
@@ -216,9 +220,12 @@ path=/foo/bar.git""",
         indirect=True,
     )
     @pytest.mark.usefixtures("_helper_config")
-    def test_path_used_if_present_fails(self) -> None:
-        with pytest.raises(ValueError, match="No mapping section"):
+    def test_path_used_if_present_fails(self, capsys: Any) -> None:
+        with pytest.raises(SystemExit):
             passgithelper.main(["get"])
+
+        _, err = capsys.readouterr()
+        assert "No mapping section" in err
 
     @pytest.mark.parametrize(
         "_helper_config",
@@ -364,7 +371,7 @@ host=mytest.com""",
     )
     @pytest.mark.usefixtures("_helper_config")
     def test_select_unknown_extractor(self) -> None:
-        with pytest.raises(KeyError):
+        with pytest.raises(SystemExit):
             passgithelper.main(["get"])
 
     @pytest.mark.parametrize(
@@ -450,3 +457,46 @@ host=mytest.com""",
 
         out, _ = capsys.readouterr()
         assert out == "password=täßt\n"
+
+    @pytest.mark.parametrize(
+        "_helper_config",
+        [
+            HelperConfig(
+                "test_data/smoke",
+                """
+protocol=https
+host=mytest.com""",
+                None,
+                "dev/mytest",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("_helper_config")
+    def test_fails_gracefully_on_pass_errors(self, capsys: Any) -> None:
+        with pytest.raises(SystemExit):
+            passgithelper.main(["get"])
+
+        _, err = capsys.readouterr()
+        assert "Unable to retrieve" in err
+
+    @pytest.mark.parametrize(
+        "_helper_config",
+        [
+            HelperConfig(
+                "test_data/smoke",
+                """
+protocol=https
+host=unknown""",
+                "ignored".encode("UTF-8"),
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("_helper_config")
+    def test_fails_gracefully_on_missing_entries(self, capsys: Any) -> None:
+        with pytest.raises(SystemExit):
+            passgithelper.main(["get"])
+
+        _, err = capsys.readouterr()
+        assert "Unable to retrieve" in err

@@ -448,7 +448,13 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         sys.exit(1)
 
     if action == "get":
-        get_password(request, mapping)
+        try:
+            get_password(request, mapping)
+        except Exception as error:
+            print(  # noqa: T001
+                "Unable to retrieve entry: {error}".format(error=error), file=sys.stderr
+            )
+            sys.exit(1)
     else:
         LOGGER.info("Action %s is currently not supported", action)
         sys.exit(1)
