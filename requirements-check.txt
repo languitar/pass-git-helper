@@ -1,5 +1,5 @@
 pydocstyle==6.1.1
-flake8==3.7.9
+flake8==3.9.1
 dlint==0.12.0
 flake8-annotations==2.7.0
 flake8-bandit==2.1.2
@@ -24,7 +24,7 @@ flake8-print==4.0.0
 flake8-pytest-style==1.6.0
 flake8-simplify==0.18.1
 flake8-string-format==0.3.0
-flake8-tidy-imports==4.1.0
+flake8-tidy-imports==4.6.0
 flake8-variables-names==0.0.5
 pep8-naming==0.11.1
 mypy==0.931
