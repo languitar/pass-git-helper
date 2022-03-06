@@ -154,7 +154,6 @@ class DataExtractor(abc.ABC):
             config:
                 configuration section for the entry
         """
-        pass
 
     @abc.abstractmethod
     def get_value(
@@ -173,7 +172,6 @@ class DataExtractor(abc.ABC):
             The extracted value or ``None`` if nothing applicable can be found
             in the entry.
         """
-        pass
 
 
 class SkippingDataExtractor(DataExtractor):
@@ -305,7 +303,6 @@ class EntryNameExtractor(DataExtractor):
 
     def configure(self, config: configparser.SectionProxy) -> None:
         """Configure nothing."""
-        pass
 
     def get_value(
         self, entry_name: Text, entry_lines: Sequence[Text]
@@ -440,7 +437,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
     try:
         mapping = parse_mapping(args.mapping)
-    except Exception as error:
+    except Exception as error:  # noqa: PIE786 ok'ish for the main function
         LOGGER.critical("Unable to parse mapping file", exc_info=True)
         print(  # noqa: T001
             "Unable to parse mapping file: {error}".format(error=error), file=sys.stderr
@@ -450,7 +447,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     if action == "get":
         try:
             get_password(request, mapping)
-        except Exception as error:
+        except Exception as error:  # noqa: PIE786 ok'ish for the main function
             print(  # noqa: T001
                 "Unable to retrieve entry: {error}".format(error=error), file=sys.stderr
             )
