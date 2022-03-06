@@ -435,7 +435,7 @@ host=mytest.com""",
         passgithelper.main(["get"])
 
         out, _ = capsys.readouterr()
-        assert out == f"password=täßt\n"
+        assert out == "password=täßt\n"
 
     @pytest.mark.parametrize(
         "_helper_config",
