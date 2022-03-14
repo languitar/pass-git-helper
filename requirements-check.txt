@@ -27,5 +27,5 @@ flake8-string-format==0.3.0
 flake8-tidy-imports==4.6.0
 flake8-variables-names==0.0.5
 pep8-naming==0.12.1
-mypy==0.940
+mypy==0.941
 black==22.1.0
