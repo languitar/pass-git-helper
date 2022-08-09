@@ -403,9 +403,9 @@ def get_password(
     password = password_extractor.get_value(pass_target, lines)
     username = username_extractor.get_value(pass_target, lines)
     if password:
-        print("password={password}".format(password=password))  # noqa: T001
+        print("password={password}".format(password=password))  # noqa: T201
     if "username" not in request and username:
-        print("username={username}".format(username=username))  # noqa: T001
+        print("username={username}".format(username=username))  # noqa: T201
 
 
 def handle_skip() -> None:
@@ -439,7 +439,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         mapping = parse_mapping(args.mapping)
     except Exception as error:  # noqa: PIE786 ok'ish for the main function
         LOGGER.critical("Unable to parse mapping file", exc_info=True)
-        print(  # noqa: T001
+        print(  # noqa: T201
             "Unable to parse mapping file: {error}".format(error=error), file=sys.stderr
         )
         sys.exit(1)
@@ -448,7 +448,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         try:
             get_password(request, mapping)
         except Exception as error:  # noqa: PIE786 ok'ish for the main function
-            print(  # noqa: T001
+            print(  # noqa: T201
                 "Unable to retrieve entry: {error}".format(error=error), file=sys.stderr
             )
             sys.exit(1)
