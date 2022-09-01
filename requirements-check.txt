@@ -28,4 +28,4 @@ flake8-tidy-imports==4.8.0
 flake8-variables-names==0.0.5
 pep8-naming==0.13.2
 mypy==0.971
-black==22.6.0
+black==22.8.0
