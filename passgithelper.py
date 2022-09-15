@@ -68,7 +68,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "action",
         type=str,
         metavar="ACTION",
-        help="Action to preform as specified in the git credential API",
+        help="Action to perform as specified in the git credential API",
     )
 
     return parser.parse_args(argv)
