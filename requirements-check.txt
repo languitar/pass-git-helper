@@ -1,4 +1,4 @@
-pydocstyle==6.2.3
+pydocstyle==6.3.0
 flake8==5.0.4
 dlint==0.13.0
 flake8-annotations==2.9.1
