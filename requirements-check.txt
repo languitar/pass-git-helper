@@ -20,7 +20,7 @@ flake8-mutable==1.2.0
 flake8-pep3101==2.0.0
 flake8-pie==0.16.0
 flake8-print==5.0.0
-flake8-pytest-style==1.7.1
+flake8-pytest-style==1.7.2
 flake8-simplify==0.19.3
 flake8-string-format==0.3.0
 flake8-tidy-imports==4.8.0
