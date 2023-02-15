@@ -1,4 +1,5 @@
 {
+  "engines": { "node": ">=0.18" },
   "devDependencies": {
     "@commitlint/cli": "17.4.3",
     "@commitlint/config-conventional": "17.4.3",
