@@ -3,7 +3,7 @@ flake8==5.0.4
 dlint==0.14.0
 flake8-annotations==3.0.0
 flake8-bandit==4.1.1
-bandit==1.7.4
+bandit==1.7.5
 flake8-black==0.3.6
 flake8-bugbear==23.2.13
 flake8-builtins==2.1.0
