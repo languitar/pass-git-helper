@@ -1,5 +1,5 @@
 pydocstyle==6.3.0
-flake8==5.0.4
+flake8==6.0.0
 dlint==0.14.0
 flake8-annotations==3.0.0
 flake8-bandit==4.1.1
