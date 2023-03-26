@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
-"""
-Implementation of the pass-git-helper utility.
+"""Implementation of the pass-git-helper utility.
 
 .. codeauthor:: Johannes Wienke
 """
@@ -14,6 +13,7 @@ import fnmatch
 import logging
 import os
 import os.path
+from pathlib import Path
 import re
 import subprocess
 import sys
@@ -24,14 +24,13 @@ import xdg.BaseDirectory
 
 LOGGER = logging.getLogger()
 CONFIG_FILE_NAME = "git-pass-mapping.ini"
-DEFAULT_CONFIG_FILE = os.path.join(
-    xdg.BaseDirectory.save_config_path("pass-git-helper"), CONFIG_FILE_NAME
+DEFAULT_CONFIG_FILE = (
+    Path(xdg.BaseDirectory.save_config_path("pass-git-helper")) / CONFIG_FILE_NAME
 )
 
 
 def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
-    """
-    Parse the command line arguments.
+    """Parse the command line arguments.
 
     Args:
         argv:
@@ -62,7 +61,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--logging",
         action="store_true",
         default=False,
-        help="Print debug messages on stderr. " "Might include sensitive information",
+        help="Print debug messages on stderr. Might include sensitive information",
     )
     parser.add_argument(
         "action",
@@ -75,8 +74,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 
 def parse_mapping(mapping_file: Optional[IO]) -> configparser.ConfigParser:
-    """
-    Parse the file containing the mappings from hosts to pass entries.
+    """Parse the file containing the mappings from hosts to pass entries.
 
     Args:
         mapping_file:
@@ -102,15 +100,14 @@ def parse_mapping(mapping_file: Optional[IO]) -> configparser.ConfigParser:
             "No mapping configured so far at any XDG config location. "
             "Please create {config_file}".format(config_file=DEFAULT_CONFIG_FILE)
         )
-    default_file = os.path.join(xdg_config_dir, CONFIG_FILE_NAME)
+    default_file = Path(xdg_config_dir) / CONFIG_FILE_NAME
     LOGGER.debug("Parsing mapping file %s", mapping_file)
-    with open(default_file, "r") as file_handle:
+    with default_file.open("r") as file_handle:
         return parse(file_handle)
 
 
 def parse_request() -> Dict[str, str]:
-    """
-    Parse the request of the git credential API from stdin.
+    """Parse the request of the git credential API from stdin.
 
     Returns:
         A dictionary with all key-value pairs of the request
@@ -135,8 +132,7 @@ class DataExtractor(abc.ABC):
     """Interface for classes that extract values from pass entries."""
 
     def __init__(self, option_suffix: Text = "") -> None:
-        """
-        Create a new instance.
+        """Create a new instance.
 
         Args:
             option_suffix:
@@ -147,8 +143,7 @@ class DataExtractor(abc.ABC):
 
     @abc.abstractmethod
     def configure(self, config: configparser.SectionProxy) -> None:
-        """
-        Configure the extractor from the mapping section.
+        """Configure the extractor from the mapping section.
 
         Args:
             config:
@@ -159,8 +154,7 @@ class DataExtractor(abc.ABC):
     def get_value(
         self, entry_name: Text, entry_lines: Sequence[Text]
     ) -> Optional[Text]:
-        """
-        Return the extracted value.
+        """Return the extracted value.
 
         Args:
             entry_name:
@@ -175,19 +169,20 @@ class DataExtractor(abc.ABC):
 
 
 class SkippingDataExtractor(DataExtractor):
-    """
-    Extracts data from a pass entry and optionally strips a prefix.
+    """Extracts data from a pass entry and optionally strips a prefix.
 
     The prefix is a fixed amount of characters.
     """
 
     def __init__(self, prefix_length: int, option_suffix: Text = "") -> None:
-        """
-        Create a new instance.
+        """Create a new instance.
 
         Args:
             prefix_length:
                 Amount of characters to skip at the beginning of the entry
+            option_suffix:
+                Suffix to put behind names of configuration keys for this
+                instance. Subclasses must use this for their own options.
         """
         super().__init__(option_suffix)
         self._prefix_length = prefix_length
@@ -219,8 +214,7 @@ class SpecificLineExtractor(SkippingDataExtractor):
     """Extracts a specific line number from an entry."""
 
     def __init__(self, line: int, prefix_length: int, option_suffix: Text = "") -> None:
-        """
-        Create a new instance.
+        """Create a new instance.
 
         Args:
             line:
@@ -240,7 +234,9 @@ class SpecificLineExtractor(SkippingDataExtractor):
             "line{suffix}".format(suffix=self._option_suffix), fallback=self._line
         )
 
-    def _get_raw(self, entry_name: Text, entry_lines: Sequence[Text]) -> Optional[Text]:
+    def _get_raw(
+        self, entry_name: Text, entry_lines: Sequence[Text]  # noqa: ARG002
+    ) -> Optional[Text]:
         if len(entry_lines) > self._line:
             return entry_lines[self._line]
         else:
@@ -251,8 +247,7 @@ class RegexSearchExtractor(DataExtractor):
     """Extracts data using a regular expression with capture group."""
 
     def __init__(self, regex: str, option_suffix: str) -> None:
-        """
-        Create a new instance.
+        """Create a new instance.
 
         Args:
             regex:
@@ -286,7 +281,7 @@ class RegexSearchExtractor(DataExtractor):
         )
 
     def get_value(
-        self, entry_name: Text, entry_lines: Sequence[Text]
+        self, entry_name: Text, entry_lines: Sequence[Text]  # noqa: ARG002
     ) -> Optional[Text]:
         """See base class method."""
         # Search through all lines and return the first matching one
@@ -305,7 +300,7 @@ class EntryNameExtractor(DataExtractor):
         """Configure nothing."""
 
     def get_value(
-        self, entry_name: Text, entry_lines: Sequence[Text]
+        self, entry_name: Text, entry_lines: Sequence[Text]  # noqa: ARG002
     ) -> Optional[Text]:
         """See base class method."""
         return os.path.split(entry_name)[1]
@@ -325,7 +320,6 @@ def find_mapping_section(
     mapping: configparser.ConfigParser, request_header: str
 ) -> configparser.SectionProxy:
     """Select the mapping entry matching the request header."""
-
     LOGGER.debug('Searching mapping to match against header "%s"', request_header)
     for section in mapping.sections():
         if fnmatch.fnmatch(request_header, section):
@@ -341,7 +335,6 @@ def find_mapping_section(
 
 def get_request_section_header(request: Mapping[str, str]) -> str:
     """Return the canonical host + optional path for section header matching."""
-
     if "host" not in request:
         LOGGER.error("host= entry missing in request. Cannot query without a host")
         raise ValueError("Request lacks host entry")
@@ -356,7 +349,6 @@ def define_pass_target(
     section: configparser.SectionProxy, request: Mapping[str, str]
 ) -> str:
     """Determine the pass target by filling in potentially used variables."""
-
     pass_target = section.get("target").replace("${host}", request["host"])
     if "username" in request:
         pass_target = pass_target.replace("${username}", request["username"])
@@ -366,8 +358,7 @@ def define_pass_target(
 def get_password(
     request: Mapping[str, str], mapping: configparser.ConfigParser
 ) -> None:
-    """
-    Resolve the given credential request in the provided mapping definition.
+    """Resolve the given credential request in the provided mapping definition.
 
     The result is printed automatically.
 
@@ -377,7 +368,6 @@ def get_password(
         mapping:
             The mapping configuration as a ConfigParser instance.
     """
-
     LOGGER.debug('Received request "%s"', request)
 
     header = get_request_section_header(request)
@@ -395,9 +385,9 @@ def get_password(
     LOGGER.debug('Requesting entry "%s" from pass', pass_target)
     # silence the subprocess injection warnings as it is the user's
     # responsibility to provide a safe mapping and execution environment
-    output = subprocess.check_output(  # noqa: S603, S607
-        ["pass", "show", pass_target]
-    ).decode(section.get("encoding", "UTF-8"))
+    output = subprocess.check_output(["pass", "show", pass_target]).decode(
+        section.get("encoding", "UTF-8")
+    )
     lines = output.splitlines()
 
     password = password_extractor.get_value(pass_target, lines)
@@ -416,8 +406,7 @@ def handle_skip() -> None:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
-    """
-    Start the pass-git-helper script.
+    """Start the pass-git-helper script.
 
     Args:
         argv:
@@ -437,7 +426,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
     try:
         mapping = parse_mapping(args.mapping)
-    except Exception as error:  # noqa: PIE786 ok'ish for the main function
+    except Exception as error:  # ok'ish for the main function
         LOGGER.critical("Unable to parse mapping file", exc_info=True)
         print(  # noqa: T201
             "Unable to parse mapping file: {error}".format(error=error), file=sys.stderr
@@ -447,7 +436,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     if action == "get":
         try:
             get_password(request, mapping)
-        except Exception as error:  # noqa: PIE786 ok'ish for the main function
+        except Exception as error:  # ok'ish for the main function
             print(  # noqa: T201
                 "Unable to retrieve entry: {error}".format(error=error), file=sys.stderr
             )
