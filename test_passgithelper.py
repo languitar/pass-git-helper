@@ -61,7 +61,7 @@ class TestSkippingDataExtractor:
             super().__init__(skip_characters)
 
         def _get_raw(
-            self, entry_text: Text, entry_lines: Sequence[Text]
+            self, entry_text: Text, entry_lines: Sequence[Text]  # noqa: ARG002
         ) -> Optional[Text]:
             return entry_lines[0]
 
@@ -382,7 +382,7 @@ host=mytest.com""",
                 """
 protocol=https
 host=mytest.com""",
-                b"xyz\nsomeline\nmyuser: tester\n" b"morestuff\nmyuser: ignore",
+                b"xyz\nsomeline\nmyuser: tester\n morestuff\nmyuser: ignore",
                 "dev/mytest",
             ),
         ],
