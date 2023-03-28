@@ -1,7 +1,7 @@
 {
   "engines": { "node": ">=0.18" },
   "devDependencies": {
-    "@commitlint/cli": "17.5.0",
+    "@commitlint/cli": "17.5.1",
     "@commitlint/config-conventional": "17.4.4",
     "@google/semantic-release-replace-plugin": "1.2.0",
     "@semantic-release/changelog": "6.0.3",
