@@ -46,6 +46,9 @@ ignore = [
     "ANN401",
     # We use assert only for documentation purposes and debugging.
     "S101",
+    # We need this here
+    "S603",
+    "S607",
     # I don't like this style
     "TRY300",
     # Gives some readability sometimes, No need to prevent this style
