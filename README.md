@@ -51,6 +51,41 @@ virtualenv /your/env
 
 ## Usage
 
+### Configure git to use pass-git-helper
+
+To instruct git to use the helper, set the `credential.helper` configuration option of git to `/full/path/to/pass-git-helper`.
+In case you do not want to include a full path, a workaround using a shell fragment needs to be used, i.e. `!pass-git-helper $@` must be the option value.
+The option can be set using the CLI with:
+
+```sh
+git config credential.helper '!pass-git-helper $@'
+```
+
+This will result in the following contents in `~/.gitconfig`:
+
+```ini
+[credential]
+    helper = !pass-git-helper $@
+```
+
+In case you share the `~/.gitconfig` across multiple machines and `pass-git-helper` is not available on all of them, the following version does not bail out if pass git helper is missing:
+
+```ini
+[credential]
+    helper = !type pass-git-helper >/dev/null && pass-git-helper $@
+```
+
+`pass-git-helper` can be combined with other helpers.
+For instance, the following configuration first tries the git built-in `cache` helper for in-memory password access before falling back to `pass-git-helper` if a cache miss occurs:
+
+```ini
+[credential]
+    helper = cache
+    helper = !type pass-git-helper >/dev/null && pass-git-helper$@
+```
+
+### Define Mappings
+
 Create the file `~/.config/pass-git-helper/git-pass-mapping.ini`.
 This file uses ini syntax to specify the mapping of hosts to entries in the password store database.
 Section headers define patterns which are matched against the host part of a URL with a git repository.
@@ -65,14 +100,6 @@ target=dev/github
 
 [*.fooo-bar.*]
 target=dev/fooo-bar
-```
-
-To instruct git to use the helper, set the `credential.helper` configuration option of git to `/full/path/to/pass-git-helper`.
-In case you do not want to include a full path, a workaround using a shell fragment needs to be used, i.e. `!pass-git-helper $@` must be the option value.
-The option can be set using the CLI with:
-
-```sh
-git config credential.helper '!pass-git-helper $@'
 ```
 
 If you want to match entries not only based on the host, but also based on the path on a host, set `credential.useHttpPath` to `true` in your git config, e.g. via:
@@ -107,7 +134,14 @@ target=git-logins/${host}
 
 The above configuration directive will lead to any host that did not match any previous section in the ini file to being looked up under the `git-logins` directory in your password store.
 
-Using the `includeIf` directive available in git >= 2.13, it is also possible to perform matching based on the current working directory by invoking `pass-git-helper` with a conditional `MAPPING-FILE`.
+#### DEFAULT Section
+
+Defaults suitable for all entries of the mapping file can be specified in a special section of the configuration file named `[DEFAULT]`.
+Everything configure in this section will automatically be available for all further entries in the file, but can be overridden there, too.
+
+### Using Different Mappings Depending on the Working Directory
+
+Using the `includeIf` directive available in git >= 2.13, it is possible to perform matching based on the current working directory by invoking `pass-git-helper` with a conditional `MAPPING-FILE`.
 To achieve this, edit your `.gitconfig`, e.g. like this:
 
 ```ini
@@ -126,12 +160,7 @@ With the following contents of `gitconfig_user1` (and `gitconfig_user2` respecti
     helper=/full/path/to/pass-git-helper -m /full/path/to/mapping_user1.ini
 ```
 
-See also the offical [documentation](https://git-scm.com/docs/git-config#_includes) for `.gitconfig`.  
-
-### DEFAULT section
-
-Defaults suitable for all entries of the mapping file can be specified in a special section of the configuration file named `[DEFAULT]`.
-Everything configure in this section will automatically be available for all further entries in the file, but can be overridden there, too.
+See also the official [documentation](https://git-scm.com/docs/git-config#_includes) for `.gitconfig`.  
 
 ## Password Store Layout and Data Extraction
 
