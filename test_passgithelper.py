@@ -3,9 +3,10 @@ from dataclasses import dataclass
 import io
 from subprocess import CalledProcessError
 from typing import Any, Iterable, Optional, Sequence, Text
+from unittest.mock import ANY
 
 import pytest
-from pytest_mock import MockFixture
+from pytest_mock import MockerFixture
 
 import passgithelper
 
@@ -19,7 +20,7 @@ class HelperConfig:
 
 
 @pytest.fixture()
-def _helper_config(mocker: MockFixture, request: Any) -> Iterable[None]:
+def helper_config(mocker: MockerFixture, request: Any) -> Iterable[Any]:
     xdg_mock = mocker.patch("xdg.BaseDirectory.load_first_config")
     xdg_mock.return_value = request.param.xdg_dir
 
@@ -33,11 +34,13 @@ def _helper_config(mocker: MockFixture, request: Any) -> Iterable[None]:
     else:
         subprocess_mock.side_effect = CalledProcessError(1, ["pass"], "pass failed")
 
-    yield
+    yield subprocess_mock
 
     if request.param.entry_name is not None:
         subprocess_mock.assert_called_once()
-        subprocess_mock.assert_called_with(["pass", "show", request.param.entry_name])
+        subprocess_mock.assert_called_with(
+            ["pass", "show", request.param.entry_name], env=ANY
+        )
 
 
 def test_handle_skip_nothing(monkeypatch: Any) -> None:
@@ -135,7 +138,7 @@ class TestEntryNameExtractor:
 
 
 @pytest.mark.parametrize(
-    "_helper_config",
+    "helper_config",
     [
         HelperConfig(
             None,
@@ -145,14 +148,14 @@ class TestEntryNameExtractor:
     ],
     indirect=True,
 )
-@pytest.mark.usefixtures("_helper_config")
+@pytest.mark.usefixtures("helper_config")
 def test_parse_mapping_file_missing() -> None:
     with pytest.raises(RuntimeError):
         passgithelper.parse_mapping(None)
 
 
 @pytest.mark.parametrize(
-    "_helper_config",
+    "helper_config",
     [
         HelperConfig(
             "test_data/smoke",
@@ -162,7 +165,7 @@ def test_parse_mapping_file_missing() -> None:
     ],
     indirect=True,
 )
-@pytest.mark.usefixtures("_helper_config")
+@pytest.mark.usefixtures("helper_config")
 def test_parse_mapping_from_xdg() -> None:
     config = passgithelper.parse_mapping(None)
     assert "mytest.com" in config
@@ -185,7 +188,7 @@ class TestScript:
         assert not err
 
     @pytest.mark.parametrize(
-        "_helper_config",
+        "helper_config",
         [
             HelperConfig(
                 "test_data/smoke",
@@ -198,7 +201,7 @@ host=mytest.com""",
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("_helper_config")
+    @pytest.mark.usefixtures("helper_config")
     def test_smoke_resolve(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
@@ -206,7 +209,7 @@ host=mytest.com""",
         assert out == "password=narf\n"
 
     @pytest.mark.parametrize(
-        "_helper_config",
+        "helper_config",
         [
             HelperConfig(
                 "test_data/smoke",
@@ -219,7 +222,7 @@ path=/foo/bar.git""",
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("_helper_config")
+    @pytest.mark.usefixtures("helper_config")
     def test_path_used_if_present_fails(self, capsys: Any) -> None:
         with pytest.raises(SystemExit):
             passgithelper.main(["get"])
@@ -228,7 +231,7 @@ path=/foo/bar.git""",
         assert "No mapping section" in err
 
     @pytest.mark.parametrize(
-        "_helper_config",
+        "helper_config",
         [
             HelperConfig(
                 "test_data/with-path",
@@ -242,7 +245,7 @@ path=subpath/bar.git""",
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("_helper_config")
+    @pytest.mark.usefixtures("helper_config")
     def test_path_used_if_present(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
@@ -250,7 +253,7 @@ path=subpath/bar.git""",
         assert out == "password=narf\n"
 
     @pytest.mark.parametrize(
-        "_helper_config",
+        "helper_config",
         [
             HelperConfig(
                 "test_data/wildcard",
@@ -265,7 +268,7 @@ path=subpath/bar.git""",
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("_helper_config")
+    @pytest.mark.usefixtures("helper_config")
     def test_wildcard_matching(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
@@ -273,7 +276,7 @@ path=subpath/bar.git""",
         assert out == "password=narf-wildcard\n"
 
     @pytest.mark.parametrize(
-        "_helper_config",
+        "helper_config",
         [
             HelperConfig(
                 "test_data/with-username",
@@ -285,7 +288,7 @@ host=plainline.com""",
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("_helper_config")
+    @pytest.mark.usefixtures("helper_config")
     def test_username_provided(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
@@ -293,7 +296,7 @@ host=plainline.com""",
         assert out == "password=password\nusername=username\n"
 
     @pytest.mark.parametrize(
-        "_helper_config",
+        "helper_config",
         [
             HelperConfig(
                 "test_data/with-username",
@@ -306,7 +309,7 @@ username=narf""",
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("_helper_config")
+    @pytest.mark.usefixtures("helper_config")
     def test_username_skipped_if_provided(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
@@ -314,7 +317,7 @@ username=narf""",
         assert out == "password=password\n"
 
     @pytest.mark.parametrize(
-        "_helper_config",
+        "helper_config",
         [
             HelperConfig(
                 "test_data/with-username",
@@ -327,7 +330,7 @@ host=mytest.com""",
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("_helper_config")
+    @pytest.mark.usefixtures("helper_config")
     def test_custom_mapping_used(self, capsys: Any) -> None:
         # this would fail for the default file from with-username
         passgithelper.main(["-m", "test_data/smoke/git-pass-mapping.ini", "get"])
@@ -336,7 +339,7 @@ host=mytest.com""",
         assert out == "password=narf\n"
 
     @pytest.mark.parametrize(
-        "_helper_config",
+        "helper_config",
         [
             HelperConfig(
                 "test_data/with-username-skip",
@@ -349,7 +352,7 @@ host=mytest.com""",
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("_helper_config")
+    @pytest.mark.usefixtures("helper_config")
     def test_prefix_skipping(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
@@ -357,7 +360,7 @@ host=mytest.com""",
         assert out == "password=xyz\nusername=tester\n"
 
     @pytest.mark.parametrize(
-        "_helper_config",
+        "helper_config",
         [
             HelperConfig(
                 "test_data/unknown-username-extractor",
@@ -369,13 +372,13 @@ host=mytest.com""",
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("_helper_config")
+    @pytest.mark.usefixtures("helper_config")
     def test_select_unknown_extractor(self) -> None:
         with pytest.raises(SystemExit):
             passgithelper.main(["get"])
 
     @pytest.mark.parametrize(
-        "_helper_config",
+        "helper_config",
         [
             HelperConfig(
                 "test_data/regex-extraction",
@@ -388,7 +391,7 @@ host=mytest.com""",
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("_helper_config")
+    @pytest.mark.usefixtures("helper_config")
     def test_regex_username_selection(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
@@ -396,7 +399,7 @@ host=mytest.com""",
         assert out == "password=xyz\nusername=tester\n"
 
     @pytest.mark.parametrize(
-        "_helper_config",
+        "helper_config",
         [
             HelperConfig(
                 "test_data/entry-name-extraction",
@@ -409,7 +412,7 @@ host=mytest.com""",
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("_helper_config")
+    @pytest.mark.usefixtures("helper_config")
     def test_entry_name_is_user(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
@@ -417,7 +420,7 @@ host=mytest.com""",
         assert out == "password=xyz\nusername=myuser\n"
 
     @pytest.mark.parametrize(
-        "_helper_config",
+        "helper_config",
         [
             HelperConfig(
                 "test_data/with-encoding",
@@ -430,7 +433,7 @@ host=mytest.com""",
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("_helper_config")
+    @pytest.mark.usefixtures("helper_config")
     def test_uses_configured_encoding(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
@@ -438,7 +441,7 @@ host=mytest.com""",
         assert out == "password=täßt\n"
 
     @pytest.mark.parametrize(
-        "_helper_config",
+        "helper_config",
         [
             HelperConfig(
                 "test_data/smoke",
@@ -451,7 +454,7 @@ host=mytest.com""",
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("_helper_config")
+    @pytest.mark.usefixtures("helper_config")
     def test_uses_utf8_by_default(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
@@ -459,7 +462,7 @@ host=mytest.com""",
         assert out == "password=täßt\n"
 
     @pytest.mark.parametrize(
-        "_helper_config",
+        "helper_config",
         [
             HelperConfig(
                 "test_data/smoke",
@@ -472,7 +475,7 @@ host=mytest.com""",
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("_helper_config")
+    @pytest.mark.usefixtures("helper_config")
     def test_fails_gracefully_on_pass_errors(self, capsys: Any) -> None:
         with pytest.raises(SystemExit):
             passgithelper.main(["get"])
@@ -481,7 +484,7 @@ host=mytest.com""",
         assert "Unable to retrieve" in err
 
     @pytest.mark.parametrize(
-        "_helper_config",
+        "helper_config",
         [
             HelperConfig(
                 "test_data/smoke",
@@ -493,10 +496,34 @@ host=unknown""",
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("_helper_config")
+    @pytest.mark.usefixtures("helper_config")
     def test_fails_gracefully_on_missing_entries(self, capsys: Any) -> None:
         with pytest.raises(SystemExit):
             passgithelper.main(["get"])
 
         _, err = capsys.readouterr()
         assert "Unable to retrieve" in err
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                "test_data/password_store_dir",
+                """
+host=example.com""",
+                "test".encode("UTF-8"),
+            ),
+        ],
+        indirect=True,
+    )
+    def test_supports_switching_password_store_dirs(
+        self, capsys: Any, helper_config: Any
+    ) -> None:
+        passgithelper.main(["get"])
+
+        out, _ = capsys.readouterr()
+        assert out == "password=test\n"
+        assert (
+            helper_config.mock_calls[-1].kwargs["env"]["PASSWORD_STORE_DIR"]
+            == "/some/dir"
+        )
