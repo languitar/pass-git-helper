@@ -355,6 +355,15 @@ def define_pass_target(
     return pass_target
 
 
+def compute_pass_environment(section: configparser.SectionProxy) -> Mapping[str, str]:
+    environment = os.environ.copy()
+    password_store_dir = section.get("password_store_dir")
+    if password_store_dir:
+        LOGGER.debug('Setting PASSWORD_STORE_DIR to "%s"', password_store_dir)
+        environment["PASSWORD_STORE_DIR"] = password_store_dir
+    return environment
+
+
 def get_password(
     request: Mapping[str, str], mapping: configparser.ConfigParser
 ) -> None:
@@ -382,12 +391,14 @@ def get_password(
     ]
     username_extractor.configure(section)
 
+    environment = compute_pass_environment(section)
+
     LOGGER.debug('Requesting entry "%s" from pass', pass_target)
     # silence the subprocess injection warnings as it is the user's
     # responsibility to provide a safe mapping and execution environment
-    output = subprocess.check_output(["pass", "show", pass_target]).decode(
-        section.get("encoding", "UTF-8")
-    )
+    output = subprocess.check_output(
+        ["pass", "show", pass_target], env=environment
+    ).decode(section.get("encoding", "UTF-8"))
     lines = output.splitlines()
 
     password = password_extractor.get_value(pass_target, lines)

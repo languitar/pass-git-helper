@@ -160,7 +160,19 @@ With the following contents of `gitconfig_user1` (and `gitconfig_user2` respecti
     helper=/full/path/to/pass-git-helper -m /full/path/to/mapping_user1.ini
 ```
 
-See also the official [documentation](https://git-scm.com/docs/git-config#_includes) for `.gitconfig`.  
+See also the official [documentation](https://git-scm.com/docs/git-config#_includes) for `.gitconfig`.
+
+### Switching Password Stores per Mapping
+
+To select a different password store for certain entries, the `password_store_dir` configuration key can be set.
+If set, `pass` is directed to a different data directory by defining the `PASSWORD_STORE_DIR` environment variable when calling `pass`.
+
+The following config demonstrates this practices
+
+```init
+[github.com/mycompany]
+password_store_dir=/home/me/.work-passwords
+```
 
 ## Password Store Layout and Data Extraction
 
