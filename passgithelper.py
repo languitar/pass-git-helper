@@ -314,6 +314,13 @@ _username_extractors = {
     ),
     "entry_name": EntryNameExtractor(option_suffix="_username"),
 }
+_password_extractors = {
+    _line_extractor_name: SpecificLineExtractor(1, 0, option_suffix="_auth"),
+    "regex_search": RegexSearchExtractor(
+        r"^auth: +(.*)$", option_suffix="_auth"
+    ),
+    "entry_name": EntryNameExtractor(option_suffix="_auth"),
+}
 
 
 def find_mapping_section(
@@ -384,7 +391,9 @@ def get_password(
 
     pass_target = define_pass_target(section, request)
 
-    password_extractor = SpecificLineExtractor(0, 0, option_suffix="_password")
+    password_extractor = _password_extractors[
+        section.get("password_extractor", fallback=_line_extractor_name)
+    ]
     password_extractor.configure(section)
     username_extractor = _username_extractors[
         section.get("username_extractor", fallback=_line_extractor_name)
