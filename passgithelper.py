@@ -317,9 +317,9 @@ _username_extractors = {
 _password_extractors = {
     _line_extractor_name: SpecificLineExtractor(1, 0, option_suffix="_auth"),
     "regex_search": RegexSearchExtractor(
-        r"^auth: +(.*)$", option_suffix="_auth"
+        r"^password: +(.*)$", option_suffix="_password"
     ),
-    "entry_name": EntryNameExtractor(option_suffix="_auth"),
+    "entry_name": EntryNameExtractor(option_suffix="_password"),
 }
 
 
