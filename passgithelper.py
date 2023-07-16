@@ -315,7 +315,7 @@ _username_extractors = {
     "entry_name": EntryNameExtractor(option_suffix="_username"),
 }
 _password_extractors = {
-    _line_extractor_name: SpecificLineExtractor(1, 0, option_suffix="_auth"),
+    _line_extractor_name: SpecificLineExtractor(0, 0, option_suffix="_password"),
     "regex_search": RegexSearchExtractor(
         r"^password: +(.*)$", option_suffix="_password"
     ),
