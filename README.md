@@ -88,8 +88,12 @@ For instance, the following configuration first tries the git built-in `cache` h
 
 Create the file `~/.config/pass-git-helper/git-pass-mapping.ini`.
 This file uses ini syntax to specify the mapping of hosts to entries in the password store database.
+The first matching mapping from the configuration file is used to select the entry from the password store database.
+This search process is based on the order of definition in the configuration file.
+
 Section headers define patterns which are matched against the host part of a URL with a git repository.
 Matching supports wildcards (using the python [fnmatch module](https://docs.python.org/3.7/library/fnmatch.html)).
+
 Each section needs to contain a `target` entry pointing to the entry in the password store with the password (and optionally username) to use.
 
 Example:
