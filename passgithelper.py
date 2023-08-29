@@ -492,7 +492,7 @@ def set_password(
     LOGGER.debug('Storing entry "%s" to pass', pass_target)
     LOGGER.debug('Entry contents: "%s"', pass_content)
 
-    subprocess.run(
+    subprocess.check_output(
         ["pass", "insert", "--multiline", "--force", pass_target],
         input=pass_content,
         encoding=section.get("encoding", "UTF-8"),
