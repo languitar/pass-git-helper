@@ -589,6 +589,14 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                 "Unable to retrieve entry: {error}".format(error=error), file=sys.stderr
             )
             sys.exit(1)
+    elif action == "store":
+        try:
+            set_password(request, mapping)
+        except Exception as error:  # ok'ish for the main function
+            print(  # noqa: T201
+                "Unable to retrieve entry: {error}".format(error=error), file=sys.stderr
+            )
+            sys.exit(1)
     else:
         LOGGER.info("Action %s is currently not supported", action)
         sys.exit(1)
