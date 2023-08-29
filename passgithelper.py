@@ -128,6 +128,97 @@ def parse_request() -> Dict[str, str]:
     return request
 
 
+class DataInserter(abc.ABC):
+    """Interface for classes that insert values into pass entries."""
+
+    def __init__(self, option_suffix: Text = "") -> None:
+        """Create a new instance.
+
+        Args:
+            option_suffix:
+                Suffix to put behind names of configuration keys for this
+                instance. Subclasses must use this for their own options.
+        """
+        self._option_suffix = option_suffix
+
+    @abc.abstractmethod
+    def configure(self, config: configparser.SectionProxy) -> None:
+        """Configure the inserter from the mapping section.
+
+        Args:
+            config:
+                configuration section for the entry
+        """
+
+    @abc.abstractmethod
+    def set_value(self, entry_name: Text, entry_data: Text, value: Text) -> Text:
+        """Sets the inserting value.
+
+        Args:
+            entry_name:
+                Name of the pass entry the value shall be inserted to
+            entry_data:
+                The entry contents as a string
+            value:
+                The value to be inserted
+        Returns:
+            The modified entry_data string
+        """
+
+
+class TemplateInserter(DataInserter):
+    def __init__(
+        self, template: Text, field_name: Text = "username", option_suffix: Text = ""
+    ) -> None:
+        """Create a new instance.
+
+        Args:
+            template:
+                the template to be used
+                replaces ${field_name} with the password
+            field_name:
+                the name of the field
+                ${field_name} in the template gets replaced with the password
+            option_suffix:
+                Suffix for each configuration option
+        """
+        super().__init__(option_suffix)
+        self._template = template
+        self._field_name = field_name
+
+    def configure(self, config: configparser.SectionProxy) -> None:
+        """See base class method."""
+        super().configure(config)
+
+        # field_name isn't here because it shouldn't be configured by the user
+
+        self._template = config.get(
+            "template{suffix}".format(suffix=self._option_suffix),
+            fallback=self._template,
+        )
+
+    def set_value(
+        self, entry_name: Text, entry_data: Text, value: Text  # noqa: ARG002
+    ) -> Text:
+        """See base class method."""
+        formatted = self._template.replace("\\n", "\n").replace(
+            "${" + self._field_name + "}", value
+        )
+        return entry_data + formatted + "\n"
+
+
+_null_username_inserter = "null"
+_username_inserters = {
+    _null_username_inserter: TemplateInserter(
+        "", field_name="username", option_suffix="_username"
+    ),
+    "template": TemplateInserter(
+        "username: ${username}", "username", option_suffix="_username"
+    ),
+    # TODO: Add an inserter for entry name
+}
+
+
 class DataExtractor(abc.ABC):
     """Interface for classes that extract values from pass entries."""
 
@@ -362,6 +453,52 @@ def compute_pass_environment(section: configparser.SectionProxy) -> Mapping[str,
         LOGGER.debug('Setting PASSWORD_STORE_DIR to "%s"', password_store_dir)
         environment["PASSWORD_STORE_DIR"] = password_store_dir
     return environment
+
+
+def set_password(
+    request: Mapping[str, str], mapping: configparser.ConfigParser
+) -> None:
+    LOGGER.debug('Received request "%s"', request)
+
+    header = get_request_section_header(request)
+    section = find_mapping_section(mapping, header)
+
+    pass_target = define_pass_target(section, request)
+
+    password = request["password"]
+    if not password:
+        LOGGER.critical("password wasn't send by git", exc_info=True)
+        sys.exit(-1)
+
+    username = request["username"]
+
+    password_inserter = TemplateInserter(
+        "${password}", "password", option_suffix="_password"
+    )
+    password_inserter.configure(section)
+    if username:
+        username_inserter = _username_inserters[
+            section.get("username_inserter", fallback=_null_username_inserter)
+        ]
+        username_inserter.configure(section)
+
+    pass_content = ""
+    pass_content = password_inserter.set_value(pass_target, pass_content, password)
+    if username:
+        pass_content = username_inserter.set_value(pass_target, pass_content, username)
+
+    environment = compute_pass_environment(section)
+
+    LOGGER.debug('Storing entry "%s" to pass', pass_target)
+    LOGGER.debug('Entry contents: "%s"', pass_content)
+
+    subprocess.run(
+        ["pass", "insert", "--multiline", "--force", pass_target],
+        input=pass_content,
+        encoding=section.get("encoding", "UTF-8"),
+        text=True,
+        env=environment,
+    )
 
 
 def get_password(
