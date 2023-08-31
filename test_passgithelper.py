@@ -55,6 +55,19 @@ def test_handle_skip_exits(monkeypatch: Any) -> None:
         passgithelper.handle_skip()
 
 
+class TestTemplateInserter:
+    def test_smoke(self) -> None:
+        inserter = passgithelper.TemplateInserter("password: ${password}", "password")
+        inputdata = (
+            "inputdata: These shouldn't evaluate: ${password}${username}${}\nnewline\n"
+        )
+        inputvalue = "input_value: ${}${password}: These shouldn't evaluate"
+        assert (
+            inserter.set_value("foo", inputdata, inputvalue)
+            == f"{inputdata}password: {inputvalue}\n"
+        )
+
+
 class TestSkippingDataExtractor:
     class ExtractorImplementation(passgithelper.SkippingDataExtractor):
         def configure(self, config: configparser.SectionProxy) -> None:
