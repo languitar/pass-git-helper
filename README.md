@@ -138,6 +138,8 @@ target=git-logins/${host}
 
 The above configuration directive will lead to any host that did not match any previous section in the ini file to being looked up under the `git-logins` directory in your password store.
 
+Apart from `${host}`, the variables `${username}` and `${protocol}` can be used for replacements.
+
 #### DEFAULT Section
 
 Defaults suitable for all entries of the mapping file can be specified in a special section of the configuration file named `[DEFAULT]`.
