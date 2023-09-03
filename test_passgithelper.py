@@ -276,7 +276,7 @@ host=wildcard.com
 username=wildcard
 path=subpath/bar.git""",
                 b"narf-wildcard",
-                "dev/wildcard.com/wildcard",
+                "dev/https/wildcard.com/wildcard",
             ),
         ],
         indirect=True,

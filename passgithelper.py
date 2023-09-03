@@ -443,6 +443,8 @@ def define_pass_target(
     pass_target = section.get("target").replace("${host}", request["host"])
     if "username" in request:
         pass_target = pass_target.replace("${username}", request["username"])
+    if "protocol" in request:
+        pass_target = pass_target.replace("${protocol}", request["protocol"])
     return pass_target
 
 
