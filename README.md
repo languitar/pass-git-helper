@@ -180,12 +180,12 @@ The following config demonstrates this practices
 password_store_dir=/home/me/.work-passwords
 ```
 
-## Password Store Layout and Data Extraction
+## Password Store Layout and Data Extraction/Insertion
 
 ### Password
 
 As usual with [pass], this helper assumes that the password is contained in the first line of the password store entry.
-Though uncommon, it is possible to strip a prefix from the data of the first line (such as `password:` by specifying an amount of characters to leave out in the `skip_password` field for an entry or also in the `[DEFAULT]` section to apply for all entries:
+Though uncommon, it is possible to strip a prefix from the data of the first line (such as `password:`) by specifying an amount of characters to leave out in the `skip_password` field for an entry or also in the `[DEFAULT]` section to apply for all entries:
 
 ```ini
 [DEFAULT]
@@ -198,26 +198,46 @@ skip_password=0
 target=special/noprefix
 ```
 
+It is also possible to add a prefix or suffix to a password when storing by changing the `template_password` field
+
+```ini
+[DEFAULT]
+# default template
+template_password=password: ${password}
+
+[somedomain]
+# for some reasons, this entry doesn't have a password prefix
+template_password=${password}
+target=special/noprefix
+
+```
+
 ### Username
 
 `pass-git-helper` can also provide the username necessary for authenticating at a server.
 In contrast to the password, no clear convention exists how username information is stored in password entries.
-Therefore, multiple strategies to extract the username are implemented and can be selected globally for the whole password store in the `[DEFAULT]` section, or individually for certain entries using the `username_extractor` key:
+Therefore, multiple strategies to extract or insert the username are implemented and can be selected globally for the whole password store in the `[DEFAULT]` section, or individually for certain entries using the `username_extractor` and `username_inserter` keys:
 
 ```ini
 [DEFAULT]
 username_extractor=regex_search
 regex_username=^user: (.*)$
 
+username_inserter=template
+template_username=user: ${username}
+
 [differingdomain.com]
 # use a fixed line here instead of a regex search
 username_extractor=specific_line
 line_username=1
+
+username_inserter=template
+template_username=${username}
 ```
 
 The following strategies can be configured:
 
-#### Strategy "specific_line" (default)
+#### Strategy "specific_line" (default) (extraction only)
 
 Extracts the data from a line indexed by its line number.
 Optionally a fixed-length prefix can be stripped before returning the line contents.
@@ -227,7 +247,7 @@ Configuration:
 * `line_username`: Line number containing the username, **0-based**. Default: 1 (second line)
 * `skip_username`: Number of characters to skip at the beginning of the line, for instance to skip a `user:` prefix. Similar to `skip_password`. Default: 0.
 
-#### Strategy "regex_search"
+#### Strategy "regex_search" (extraction only)
 
 Searches for the first line that matches a provided regular expressions and returns the contents of that line that are captured in a regular expression capture group.
 
@@ -235,12 +255,21 @@ Configuration:
 
 * `regex_username`: The regular expression to apply. Has to contain a single capture group for indicating the data to extract. Default: `^username: +(.*)$`.
 
-#### Strategy "entry_name"
+#### Strategy "entry_name" (extraction only)
 
 Returns the last path fragment of the password store entry as the username.
 For instance, if a regular [pass] call would be `pass show dev/github.com/languitar`, the returned username would be `languitar`.
 
 No configuration options.
+
+#### Strategy "template" (insertion only)
+
+Writes the template with ${username} replaced with the actual username or in the case of `template_password` ${password} field
+
+Configuration:
+
+* `template_username`: The template to use when storing the username. Default: `username: ${username}`
+* `template_password`: The template to use when storing the password. Default: `${password}`
 
 ### File Encoding
 
