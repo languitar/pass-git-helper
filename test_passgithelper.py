@@ -15,8 +15,9 @@ import passgithelper
 class HelperConfig:
     xdg_dir: Optional[str]
     request: str
-    entry_data: Optional[bytes]
+    entry_data: Optional[bytes] = None
     entry_name: Optional[str] = None
+    expected_input: Optional[str] = None
 
 
 @pytest.fixture()
@@ -31,12 +32,14 @@ def helper_config(mocker: MockerFixture, request: Any) -> Iterable[Any]:
     subprocess_mock = mocker.patch("subprocess.check_output")
     if request.param.entry_data:
         subprocess_mock.return_value = request.param.entry_data
+    elif request.param.expected_input:
+        subprocess_mock.asset_called_with(input=request.param.expected_input)
     else:
         subprocess_mock.side_effect = CalledProcessError(1, ["pass"], "pass failed")
 
     yield subprocess_mock
 
-    if request.param.entry_name is not None:
+    if request.param.entry_name is not None and request.param.expected_input is None:
         subprocess_mock.assert_called_once()
         subprocess_mock.assert_called_with(
             ["pass", "show", request.param.entry_name], env=ANY
@@ -66,6 +69,18 @@ class TestTemplateInserter:
             inserter.set_value("foo", inputdata, inputvalue)
             == f"{inputdata}password: {inputvalue}\n"
         )
+
+    def test_configuration(self) -> None:
+        inserter = passgithelper.TemplateInserter(
+            "username: ${username}", "username", "_username"
+        )
+        config = configparser.ConfigParser()
+        config.read_string(
+            r"""[test]
+template_username=foo: ${username}"""
+        )
+        inserter.configure(config["test"])
+        assert inserter._template == r"foo: ${username}"
 
 
 class TestSkippingDataExtractor:
@@ -215,11 +230,31 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_smoke_resolve(self, capsys: Any) -> None:
+    def test_smoke_get(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
         out, _ = capsys.readouterr()
         assert out == "password=narf\n"
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                "test_data/smoke",
+                """
+username=myuser
+password=mypasswd
+protocol=https
+host=mytest.com""",
+                entry_name="dev/mytest",
+                expected_input="mypasswd\n",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_smoke_store(self) -> None:
+        passgithelper.main(["store"])
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -335,6 +370,25 @@ username=narf""",
             HelperConfig(
                 "test_data/with-username",
                 """
+host=plainline.com
+password=passwd
+username=narf""",
+                entry_name="dev/plainline",
+                expected_input=b"passwd\n",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_username_skipped_if_provided_store(self) -> None:
+        passgithelper.main(["store"])
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                "test_data/with-username",
+                """
 protocol=https
 host=mytest.com""",
                 b"narf",
@@ -344,12 +398,33 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_custom_mapping_used(self, capsys: Any) -> None:
+    def test_custom_mapping_used_get(self, capsys: Any) -> None:
         # this would fail for the default file from with-username
         passgithelper.main(["-m", "test_data/smoke/git-pass-mapping.ini", "get"])
 
         out, _ = capsys.readouterr()
         assert out == "password=narf\n"
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                "test_data/with-username",
+                """
+password=passwd
+username=ldev
+protocol=https
+host=mytest.com""",
+                entry_name="dev/mytest",
+                expected_input="passwd\n",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_custom_mapping_used_store(self) -> None:
+        # this would fail for the default file from with-username
+        passgithelper.main(["-m", "test_data/smoke/git-pass-mapping.ini", "get"])
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -389,6 +464,45 @@ host=mytest.com""",
     def test_select_unknown_extractor(self) -> None:
         with pytest.raises(SystemExit):
             passgithelper.main(["get"])
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                "test_data/unknown-username-inserter",
+                """
+username=ldev
+password=passwd
+protocol=https
+host=mytest.com""",
+                b"ignored",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_select_unknown_inserter(self) -> None:
+        with pytest.raises(SystemExit):
+            passgithelper.main(["store"])
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                "test_data/template-insertion",
+                """
+username=ldev
+password=passwd
+host=mytest.com""",
+                entry_name="dev/mytest",
+                expected_input="passwd\nlogin: ldev",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_templated_username(self) -> None:
+        passgithelper.main(["store"])
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -473,6 +587,26 @@ host=mytest.com""",
 
         out, _ = capsys.readouterr()
         assert out == "password=täßt\n"
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                "test_data/smoke",
+                """
+password={"täßt".encode("UTF-8")}
+username=ldev
+protocol=https
+host=mytest.com""",
+                entry_name="dev/mytest",
+                expected_input="täßt".encode("UTF-8"),
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_uses_utf8_by_default_store(self) -> None:
+        passgithelper.main(["store"])
 
     @pytest.mark.parametrize(
         "helper_config",
