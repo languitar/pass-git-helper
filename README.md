@@ -231,9 +231,13 @@ Configuration:
 
 Searches for the first line that matches a provided regular expressions and returns the contents of that line that are captured in a regular expression capture group.
 
+Internally, [Python regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax) are used, and you have access to all provided syntax features.
+
 Configuration:
 
-* `regex_username`: The regular expression to apply. Has to contain a single capture group for indicating the data to extract. Default: `^username: +(.*)$`.
+* `regex_username`: The regular expression to apply. Has to contain a single capture group for indicating the data to extract.
+  In case your regular expression requires parentheses for matching parts that are not the username, you can use non-capturing parentheses (i.e., `(?:...)`).
+  Default: `^username: +(.*)$`.
 
 #### Strategy "entry_name"
 
