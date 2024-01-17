@@ -138,6 +138,8 @@ target=git-logins/${host}
 
 The above configuration directive will lead to any host that did not match any previous section in the ini file to being looked up under the `git-logins` directory in your password store.
 
+Apart from `${host}`, the variables `${username}` and `${protocol}` can be used for replacements.
+
 #### DEFAULT Section
 
 Defaults suitable for all entries of the mapping file can be specified in a special section of the configuration file named `[DEFAULT]`.
@@ -229,9 +231,13 @@ Configuration:
 
 Searches for the first line that matches a provided regular expressions and returns the contents of that line that are captured in a regular expression capture group.
 
+Internally, [Python regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax) are used, and you have access to all provided syntax features.
+
 Configuration:
 
-* `regex_username`: The regular expression to apply. Has to contain a single capture group for indicating the data to extract. Default: `^username: +(.*)$`.
+* `regex_username`: The regular expression to apply. Has to contain a single capture group for indicating the data to extract.
+  In case your regular expression requires parentheses for matching parts that are not the username, you can use non-capturing parentheses (i.e., `(?:...)`).
+  Default: `^username: +(.*)$`.
 
 #### Strategy "entry_name"
 
