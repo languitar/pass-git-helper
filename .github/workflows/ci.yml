@@ -91,7 +91,7 @@ jobs:
         with:
           node-version: 18
       - name: Cache Node packages
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: node_modules
           key: release-${{ hashFiles('package.json') }}-${{ hashFiles('package-lock.json') }}
