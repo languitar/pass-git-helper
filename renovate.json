@@ -4,5 +4,16 @@
   ],
   "pip_requirements": {
     "fileMatch": ["^requirements.*\\.txt$"]
-  }
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["^\\.github/.*\\.ya?ml$"],
+      "matchStrings": [
+        "node-version: (?<currentValue>.*)"
+      ],
+      "depNameTemplate": "node-version",
+      "datasourceTemplate": "node-version"
+    },
+  ]
 }
