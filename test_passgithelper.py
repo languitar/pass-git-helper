@@ -1,10 +1,11 @@
 import configparser
 import logging
 from collections.abc import Generator, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from subprocess import CalledProcessError
-from typing import Text, TypeAlias, cast
+from typing import ClassVar, Text, TypeAlias, cast
 from unittest.mock import ANY
 
 import pytest
@@ -50,6 +51,10 @@ class HelperConfig:
             contained in the the command line options provided to ``pass`` (default:
             None). It can also be used to adapt test implementation behaviour to a given
             parametrization.
+        patch_ensure_password_is_file:
+            When set to False (which is the default), ``helper_config`` will patch the
+            ``patch_ensure_password_is_file(..)`` function. Only change this to ``True``
+            for tests of the ``patch_ensure_password_is_file(..)`` function.
         mock_co_expect_call:
             With the default (``True``), ``helper_config`` will add ``assert_called_*``
             checks for the ``subprocess.check_output`` mock during teardown. When set to
@@ -67,6 +72,7 @@ class HelperConfig:
     request: str = ""
     entry_data: bytes | None = None
     entry_name: str | None = None
+    patch_ensure_password_is_file: bool = True
     mock_co_expect_call: bool = True
     out_expected: str = ""
     err_expected: str = ""
@@ -229,6 +235,9 @@ def helper_config(
         return_value=test_params.request.splitlines(keepends=True),
     )
 
+    if test_params.patch_ensure_password_is_file:
+        _ = mocker.patch("passgithelper.ensure_password_is_file")
+
     subprocess_mock = mocker.patch("subprocess.check_output")
     if test_params.entry_data:
         subprocess_mock.return_value = test_params.entry_data
@@ -280,7 +289,38 @@ class TestPasswordStoreDirSelection:
     ``PASSWORD_STORE_DIR`` environment variable or via the
     ``password_store_dir`` option in the ini file. In case both are present, the
     ini file option overrides the environment variable.
+
+    Empty values are ignored (as if they have not been set).
+
+    The different variants are tested here.
+
     """
+
+    def test_uses_default_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        ini = configparser.ConfigParser()
+
+        expected = str(Path("~/.password-store").expanduser())
+        # no password store configured (neither per env. variable nor ini file
+        # option) -> default value (`~/.password-store`)
+        monkeypatch.delenv("PASSWORD_STORE_DIR", raising=False)
+        ini["example.com"] = {}
+        env, pwd_store_dir = passgithelper.compute_pass_environment(ini["example.com"])
+        assert str(pwd_store_dir) == env.get("PASSWORD_STORE_DIR")
+        assert pwd_store_dir == Path(expected)
+        # also: check `~` expansion
+        assert pwd_store_dir.is_absolute()
+
+    def test_uses_env_var_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        ini = configparser.ConfigParser()
+
+        expected = "/tmp/password-store-from-env"
+        # `PASSWORD_STORE_DIR` in environment, empty ini file section -> value of
+        # env. variable overrides default
+        monkeypatch.setenv("PASSWORD_STORE_DIR", expected)
+        ini["example.com"] = {}
+        env, pwd_store_dir = passgithelper.compute_pass_environment(ini["example.com"])
+        assert str(pwd_store_dir) == env.get("PASSWORD_STORE_DIR")
+        assert pwd_store_dir == Path(expected)
 
     def test_ini_file_option_overrides_environment(
         self, monkeypatch: pytest.MonkeyPatch
@@ -292,8 +332,37 @@ class TestPasswordStoreDirSelection:
         # section -> value from ini file overrides env. variable
         monkeypatch.setenv("PASSWORD_STORE_DIR", "/tmp/password-store-from-env")
         ini["example.com"] = {"password_store_dir": expected}
-        env = passgithelper.compute_pass_environment(ini["example.com"])
-        assert env.get("PASSWORD_STORE_DIR") == expected
+        env, pwd_store_dir = passgithelper.compute_pass_environment(ini["example.com"])
+        assert str(pwd_store_dir) == env.get("PASSWORD_STORE_DIR")
+        assert pwd_store_dir == Path(expected)
+
+    def test_ignores_empty_ini_file_option(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ini = configparser.ConfigParser()
+
+        expected = "/tmp/password-store-from-env"
+        # `PASSWORD_STORE_DIR` in environment, empty `password_store_dir` in ini
+        # file section -> empty ini value ignored, fall back to env. variable
+        monkeypatch.setenv("PASSWORD_STORE_DIR", expected)
+        ini["example.com"] = {"password_store_dir": ""}
+        env, pwd_store_dir = passgithelper.compute_pass_environment(ini["example.com"])
+        assert str(pwd_store_dir) == env.get("PASSWORD_STORE_DIR")
+        assert pwd_store_dir == Path(expected)
+
+    def test_ignores_empty_env_var_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        ini = configparser.ConfigParser()
+
+        expected = str(Path("~/.password-store").expanduser())
+        # empty `PASSWORD_STORE_DIR` in environment, empty ini file section -> empty
+        # env. var value ignored, fall back to default
+        monkeypatch.setenv("PASSWORD_STORE_DIR", "")
+        ini["example.com"] = {}
+        env, pwd_store_dir = passgithelper.compute_pass_environment(ini["example.com"])
+        assert str(pwd_store_dir) == env.get("PASSWORD_STORE_DIR")
+        assert pwd_store_dir == Path(expected)
+        # also: check `~` expansion
+        assert pwd_store_dir.is_absolute()
 
 
 class TestSkippingDataExtractor:
@@ -1075,3 +1144,98 @@ host=example.com""",
         password_store_dir = Path(env["PASSWORD_STORE_DIR"])
         assert password_store_dir.is_absolute()
         assert password_store_dir == Path(pws_dir_expected).expanduser()
+
+    # test parametrization
+    argvalues_ensure_password_is_file: ClassVar[list[HelperConfig]] = [
+        # 1. pass_target pointing to valid (but unencrypted) password store file
+        HelperConfig(
+            entry_name="git/example.com/user1",
+            entry_data=b"secret\nusername: user1\n",
+            request="\nprotocol=https\nhost=example.com\npath=user1/repo.git\n",
+            patch_ensure_password_is_file=False,
+            out_expected="password=secret\nusername=user1\n",
+        ),
+        # 2. pass_target pointing to symlink to valid (but unencrypted) password
+        #    store file
+        HelperConfig(
+            entry_name="git/example.com/user2",
+            entry_data=b"secret\nusername: user1\n",
+            request="\nprotocol=https\nhost=example.com\npath=user1/repo.git\n",
+            patch_ensure_password_is_file=False,
+            out_expected="password=secret\nusername=user1\n",
+        ),
+        # 3. pass_target pointing to non-existing entry
+        HelperConfig(
+            entry_name="git/example.com/doesnotexist",
+            request="\nprotocol=https\nhost=example.com\n",
+            patch_ensure_password_is_file=False,
+            mock_co_expect_call=False,
+            err_expected="/example.com/doesnotexist.gpg' does not exist",
+        ),
+        # 4. pass_target pointing to a directory
+        HelperConfig(
+            entry_name="git/example.com",
+            request="\nprotocol=https\nhost=example.com\n",
+            patch_ensure_password_is_file=False,
+            mock_co_expect_call=False,
+            err_expected="/git/example.com.gpg' does not exist",
+        ),
+        # 5. pass_target pointing to a directory `<dir>` with another directory
+        #    `<dir>.gpg`
+        HelperConfig(
+            entry_name="git/github.com",
+            request="\nprotocol=https\nhost=github.com\n",
+            patch_ensure_password_is_file=False,
+            mock_co_expect_call=False,
+            err_expected="/git/github.com.gpg' is not a file",
+        ),
+        # 6. pass_target pointing to password store file with identically named
+        #    directory
+        HelperConfig(
+            entry_name="git/gitlab.com",
+            entry_data=b"secret\nusername: gluser\n",
+            request="\nprotocol=https\nhost=gitlab.com\n",
+            patch_ensure_password_is_file=False,
+            out_expected="password=secret\nusername=gluser\n",
+        ),
+    ]
+
+    @pytest.mark.parametrize(
+        argnames="helper_config",
+        argvalues=argvalues_ensure_password_is_file,
+        indirect=True,
+    )
+    def test_function_ensure_password_is_file_with_mocked_pass_cli(
+        self,
+        mocker: MockerFixture,
+        capsys: CapsysType,
+        helper_config: HelperConfigAndMock,
+    ) -> None:
+        """Test function ``ensure_password_is_file(..)`` with mocked ``pass`` executable.
+
+        The test runs ``passgithelper.main(..)`` while mocking sub-process calls
+        to the ``pass`` executable. The filesystem checks of
+        ``ensure_password_is_file(..)`` operate on ``test_data/dummy-password-store``.
+
+        """
+        test_params = helper_config.test_params
+        password_store_dir = str(Path.cwd() / "test_data/dummy-password-store")
+
+        _ = setup_helper_parse_request_mock(
+            mocker,
+            test_params,
+            use_wildcard_section=True,
+            username_extractor="regex_search",
+            # make sure that ensure_password_is_file uses
+            # test_data/dummy-password-store
+            password_store_dir=password_store_dir,
+        )
+
+        with (
+            pytest.raises(SystemExit, match=r"^3$")
+            if test_params.err_expected
+            else nullcontext()
+        ):
+            passgithelper.main(["get"])
+
+        teardown_helper_capsys_checks(capsys, test_params)
