@@ -359,8 +359,9 @@ def define_pass_target(
 
 def compute_pass_environment(section: configparser.SectionProxy) -> Mapping[str, str]:
     environment = os.environ.copy()
-    password_store_dir = section.get("password_store_dir")
-    if password_store_dir:
+    _password_store_dir = section.get("password_store_dir")
+    if _password_store_dir:
+        password_store_dir = Path.expanduser(_password_store_dir)
         LOGGER.debug('Setting PASSWORD_STORE_DIR to "%s"', password_store_dir)
         environment["PASSWORD_STORE_DIR"] = password_store_dir
     return environment
