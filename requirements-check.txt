@@ -1,4 +1,4 @@
 ruff==0.4.1
-black==24.3.0
+black==24.4.0
 isort==5.13.2
 mypy==1.9.0
