@@ -388,9 +388,15 @@ def get_password(
 
     password_extractor = SpecificLineExtractor(0, 0, option_suffix="_password")
     password_extractor.configure(section)
-    username_extractor = _username_extractors[
-        section.get("username_extractor", fallback=_line_extractor_name)
-    ]
+
+    username_extractor_name = section.get(
+        "username_extractor", fallback=_line_extractor_name
+    )
+    username_extractor = _username_extractors.get(username_extractor_name)
+    if username_extractor is None:
+        raise ValueError(
+            f"A username_extractor of type '{username_extractor_name}' does not exist"
+        )
     username_extractor.configure(section)
 
     environment = compute_pass_environment(section)
