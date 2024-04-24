@@ -373,9 +373,11 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_select_unknown_extractor(self) -> None:
+    def test_select_unknown_extractor(self, capsys: Any) -> None:
         with pytest.raises(SystemExit):
             passgithelper.main(["get"])
+        _, err = capsys.readouterr()
+        assert "username_extractor of type 'doesntexist' does not exist" in err
 
     @pytest.mark.parametrize(
         "helper_config",
