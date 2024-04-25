@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
     name="pass-git-helper",
-    version="1.4.1",
+    version="1.5.0",
     install_requires=["pyxdg"],
     extras_require={"test": ["pytest", "pytest-coverage", "pytest-mock"]},
     py_modules=["passgithelper"],
