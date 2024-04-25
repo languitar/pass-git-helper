@@ -3,6 +3,8 @@ requires = ["setuptools", "wheel"]
 
 [tool.ruff]
 src = ["src"]
+
+[tool.ruff.lint]
 select = [
     "E",
     "F",
@@ -62,7 +64,7 @@ ignore = [
     "TRY200",
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "test_passgithelper.py" = [
     # Allow hard-coded passwords in tests
     "S105",
@@ -77,5 +79,5 @@ ignore = [
     "SLF001",
 ]
 
-[tool.ruff.pydocstyle]
+[tool.ruff.lint.pydocstyle]
 convention = "google"
