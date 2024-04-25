@@ -271,8 +271,6 @@ class RegexSearchExtractor(DataExtractor):
 
     def configure(self, config: configparser.SectionProxy) -> None:
         """See base class method."""
-        super().configure(config)
-
         self._regex = self._build_matcher(
             config.get(
                 "regex{suffix}".format(suffix=self._option_suffix),
