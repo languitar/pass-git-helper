@@ -20,7 +20,7 @@ class HelperConfig:
     entry_name: Optional[str] = None
 
 
-@pytest.fixture()
+@pytest.fixture
 def helper_config(mocker: MockerFixture, request: Any) -> Iterable[Any]:
     xdg_mock = mocker.patch("xdg.BaseDirectory.load_first_config")
     xdg_mock.return_value = request.param.xdg_dir

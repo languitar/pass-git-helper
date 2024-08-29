@@ -61,8 +61,6 @@ ignore = [
     # Will be fixed lated.
     "TRY003",
     "TRY301",
-    # Already handled by B904
-    "TRY200",
 ]
 
 [tool.ruff.lint.per-file-ignores]
