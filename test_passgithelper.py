@@ -1,7 +1,6 @@
 import configparser
 from dataclasses import dataclass
 import io
-from pathlib import Path
 from subprocess import CalledProcessError
 from typing import Any, Iterable, Optional, Sequence, Text
 from unittest.mock import ANY
@@ -29,9 +28,6 @@ def helper_config(mocker: MockerFixture, request: Any) -> Iterable[Any]:
         request.param.request
     )
 
-    if request.param.entry_data != b"check-password-file":
-        mocker.patch("passgithelper.check_password_file")
-
     subprocess_mock = mocker.patch("subprocess.check_output")
     if request.param.entry_data:
         subprocess_mock.return_value = request.param.entry_data
@@ -57,85 +53,6 @@ def test_handle_skip_exits(monkeypatch: Any) -> None:
     monkeypatch.setenv("PASS_GIT_HELPER_SKIP", "1")
     with pytest.raises(SystemExit):
         passgithelper.handle_skip()
-
-
-class TestPasswordStoreDirSelection:
-    """Test password store directory selection.
-
-    The password store directory used by ``pass`` can either be set via the
-    ``PASSWORD_STORE_DIR`` environment variable or via the
-    ``password_store_dir`` option in the ini file. In case both are present, the
-    ini file option overrides the environment variable.
-
-    Empty values are ignored (as if they have not been set).
-
-    The different variants are tested here.
-
-    """
-
-    def test_uses_default_value(self, monkeypatch: Any) -> None:
-        ini = configparser.ConfigParser()
-
-        expected = str(Path("~/.password-store").expanduser())
-        # no password store configured (neither per env. variable nor ini file
-        # option) -> default value (`~/.password-store`)
-        monkeypatch.delenv("PASSWORD_STORE_DIR", raising=False)
-        ini["example.com"] = {}
-        env, pwd_store_dir = passgithelper.compute_pass_environment(ini["example.com"])
-        assert str(pwd_store_dir) == env.get("PASSWORD_STORE_DIR")
-        assert pwd_store_dir == Path(expected)
-        # also: check `~` expansion
-        assert pwd_store_dir.is_absolute()
-
-    def test_uses_env_var_value(self, monkeypatch: Any) -> None:
-        ini = configparser.ConfigParser()
-
-        expected = "/tmp/password-store-from-env"
-        # `PASSWORD_STORE_DIR` in environment, empty ini file section -> value of
-        # env. variable overrides default
-        monkeypatch.setenv("PASSWORD_STORE_DIR", expected)
-        ini["example.com"] = {}
-        env, pwd_store_dir = passgithelper.compute_pass_environment(ini["example.com"])
-        assert str(pwd_store_dir) == env.get("PASSWORD_STORE_DIR")
-        assert pwd_store_dir == Path(expected)
-
-    def test_ini_file_option_overrides_environment(self, monkeypatch: Any) -> None:
-        ini = configparser.ConfigParser()
-
-        expected = "/tmp/password-store-from-ini"
-        # `PASSWORD_STORE_DIR` in environemnt, `password_store_dir` in ini file
-        # section -> value from ini file overrides env. variable
-        monkeypatch.setenv("PASSWORD_STORE_DIR", "/tmp/password-store-from-env")
-        ini["example.com"] = {"password_store_dir": expected}
-        env, pwd_store_dir = passgithelper.compute_pass_environment(ini["example.com"])
-        assert str(pwd_store_dir) == env.get("PASSWORD_STORE_DIR")
-        assert pwd_store_dir == Path(expected)
-
-    def test_ignores_empty_ini_file_option(self, monkeypatch: Any) -> None:
-        ini = configparser.ConfigParser()
-
-        expected = "/tmp/password-store-from-env"
-        # `PASSWORD_STORE_DIR` in environment, empty `password_store_dir` in ini
-        # file section -> empty ini value ignored, fall back to env. variable
-        monkeypatch.setenv("PASSWORD_STORE_DIR", expected)
-        ini["example.com"] = {"password_store_dir": ""}
-        env, pwd_store_dir = passgithelper.compute_pass_environment(ini["example.com"])
-        assert str(pwd_store_dir) == env.get("PASSWORD_STORE_DIR")
-        assert pwd_store_dir == Path(expected)
-
-    def test_ignores_empty_env_var_value(self, monkeypatch: Any) -> None:
-        ini = configparser.ConfigParser()
-
-        expected = str(Path("~/.password-store").expanduser())
-        # empty `PASSWORD_STORE_DIR` in environment, empty ini file section -> empty
-        # env. var value ignored, fall back to default
-        monkeypatch.setenv("PASSWORD_STORE_DIR", "")
-        ini["example.com"] = {}
-        env, pwd_store_dir = passgithelper.compute_pass_environment(ini["example.com"])
-        assert str(pwd_store_dir) == env.get("PASSWORD_STORE_DIR")
-        assert pwd_store_dir == Path(expected)
-        # also: check `~` expansion
-        assert pwd_store_dir.is_absolute()
 
 
 class TestSkippingDataExtractor:
@@ -612,76 +529,3 @@ host=example.com""",
             helper_config.mock_calls[-1].kwargs["env"]["PASSWORD_STORE_DIR"]
             == "/some/dir"
         )
-
-    @pytest.mark.parametrize(
-        "helper_config",
-        [
-            HelperConfig(
-                None,
-                "\nhost=example.com",
-                b"ignored",
-            ),
-        ],
-        indirect=True,
-    )
-    def test_uses_password_store_dir_relative_to_home(
-        self, mocker: MockerFixture, helper_config: Any
-    ) -> None:
-        config = configparser.ConfigParser()
-        config["example.com"] = {
-            "password_store_dir": "~/some/dir",
-            "target": "dev/mytest",
-        }
-        mocker.patch("passgithelper.parse_mapping").return_value = config
-
-        passgithelper.main(["get"])
-        password_store_dir = Path(
-            helper_config.mock_calls[-1].kwargs["env"]["PASSWORD_STORE_DIR"]
-        )
-        assert password_store_dir.is_absolute()
-        assert password_store_dir == Path("~/some/dir").expanduser()
-
-    @pytest.mark.parametrize(
-        "helper_config",
-        [
-            HelperConfig(
-                None,
-                "",
-                b"check-password-file",
-            ),
-        ],
-        indirect=True,
-    )
-    @pytest.mark.usefixtures("helper_config")
-    def test_verifies_check_password_file_function(
-        self, monkeypatch: Any, mocker: MockerFixture, capsys: Any
-    ) -> None:
-        monkeypatch.setenv(
-            "PASSWORD_STORE_DIR", str(Path.cwd() / "test_data/dummy-password-store")
-        )
-        config = configparser.ConfigParser()
-        config["example.com"] = {"target": ""}
-        mocker.patch("passgithelper.parse_mapping").return_value = config
-        mocker.patch("passgithelper.parse_request").return_value = {
-            "host": "example.com"
-        }
-
-        config["example.com"]["target"] = "example.com"
-        with pytest.raises(SystemExit):
-            passgithelper.main(["get"])
-        out, err = capsys.readouterr()
-        assert err.endswith("example.com.gpg' is not a file\n")
-        assert not out
-
-        config["example.com"]["target"] = "example.com/doesnotexist"
-        with pytest.raises(SystemExit):
-            passgithelper.main(["get"])
-        _, err = capsys.readouterr()
-        assert err.endswith("example.com/doesnotexist.gpg' does not exist\n")
-        assert not out
-
-        config["example.com"]["target"] = "example.com/fakepwd"
-        passgithelper.main(["get"])
-        out, err = capsys.readouterr()
-        assert out == "password=check-password-file\n"
-        assert not err
