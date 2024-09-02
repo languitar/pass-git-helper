@@ -171,13 +171,13 @@ See also the official [documentation](https://git-scm.com/docs/git-config#_inclu
 ### Switching Password Stores per Mapping
 
 To select a different password store for certain entries, the `password_store_dir` configuration key can be set.
-If set to a non-empty value, `pass` is directed to a different data directory by defining the `PASSWORD_STORE_DIR` environment variable when calling `pass`. If the `password_store_dir` value starts with a tilde (`~`) it will be replaced with the users *HOME* directory (i.e. with the value of the `HOME` or, on Windows, `USERPROFILE` environment variable, see [os.path.expanduser()](https://docs.python.org/3/library/os.path.html#os.path.expanduser) for details).
+If set, `pass` is directed to a different data directory by defining the `PASSWORD_STORE_DIR` environment variable when calling `pass`.
 
 The following config demonstrates this practices
 
 ```init
 [github.com/mycompany]
-password_store_dir=~/.work-passwords
+password_store_dir=/home/me/.work-passwords
 ```
 
 ## Password Store Layout and Data Extraction

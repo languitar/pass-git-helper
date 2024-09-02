@@ -17,7 +17,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Dict, IO, Mapping, Optional, Pattern, Sequence, Text, Tuple
+from typing import Dict, IO, Mapping, Optional, Pattern, Sequence, Text
 
 import xdg.BaseDirectory
 
@@ -355,68 +355,13 @@ def define_pass_target(
     return pass_target
 
 
-def compute_pass_environment(
-    section: configparser.SectionProxy,
-) -> Tuple[Mapping[str, str], Path]:
-    """Returns the environment variables needed to start the ``pass`` subprocess.
-
-    The main task of this function is to determine the password store directory
-    to be used by ``pass``. It does this by:
-
-    1. using the value of ``password_store_dir`` in ``section`` (if defined and
-       non-empty),
-    2. using the value of the ``PASSWORD_STORE_DIR`` environment variable (if
-       defined and non-empty),
-    3. falling back to the default: ``~/password-store``.
-
-    In the next step, a leading ``~`` (tilde) in the resulting path gets
-    replaced by the users ``$HOME`` (on Windows: ``%USERPROFILE%``) directory.
-    See ``os.path.expanduser()`` for more details.
-
-    Finally, the result is used to add or update ``PASSWORD_STORE_DIR`` to/in a
-    copy of the current process environment.
-
-    Args:
-        section:
-            Ini file section which applies to the current password target.
-
-    Returns:
-        A tuple (env, dir) where ``env`` is a dictionary comprising a copy of
-        the current process environment wth updated ``PASSWORD_STORE_DIR`` value
-        and ``dir`` is the value of ``PASSWORD_STORE_DIR`` as a ``Path``
-        instance (for the callers convenience).
-
-    """
+def compute_pass_environment(section: configparser.SectionProxy) -> Mapping[str, str]:
     environment = os.environ.copy()
-    password_store_dir = Path(
-        section.get("password_store_dir")
-        or environment.get("PASSWORD_STORE_DIR")
-        or "~/.password-store"
-    ).expanduser()
-    LOGGER.debug('Setting PASSWORD_STORE_DIR to "%s"', password_store_dir)
-    environment["PASSWORD_STORE_DIR"] = str(password_store_dir)
-    return environment, password_store_dir
-
-
-def check_password_file(password_store_dir: Path, pass_target: str) -> None:
-    """Check that the password file exists and that it is a regular file.
-
-    Args:
-        password_store_dir:
-            Directory which contains the password to be checked.
-        pass_target:
-            Path to the actual password file within ``password_store_dir``
-            (without ``.gpg`` extension).
-
-    Raises:
-        - FileNotFoundError if the password file does not exist,
-        - TypeError if if the password file is not a real file.
-    """
-    pass_target_file = Path(password_store_dir / (pass_target + ".gpg"))
-    if not pass_target_file.exists():
-        raise FileNotFoundError(f"'{pass_target_file}' does not exist")
-    if not pass_target_file.is_file():
-        raise TypeError(f"'{pass_target_file}' is not a file")
+    password_store_dir = section.get("password_store_dir")
+    if password_store_dir:
+        LOGGER.debug('Setting PASSWORD_STORE_DIR to "%s"', password_store_dir)
+        environment["PASSWORD_STORE_DIR"] = password_store_dir
+    return environment
 
 
 def get_password(
@@ -452,8 +397,7 @@ def get_password(
         )
     username_extractor.configure(section)
 
-    environment, password_store_dir = compute_pass_environment(section)
-    check_password_file(password_store_dir, pass_target)
+    environment = compute_pass_environment(section)
 
     LOGGER.debug('Requesting entry "%s" from pass', pass_target)
     # silence the subprocess injection warnings as it is the user's
