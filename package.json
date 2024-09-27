@@ -8,7 +8,7 @@
     "conventional-changelog-conventionalcommits": "^8.0.0",
     "@semantic-release/changelog": "6.0.3",
     "@semantic-release/git": "10.0.1",
-    "semantic-release": "24.1.1",
+    "semantic-release": "24.1.2",
     "semantic-release-replace-plugin": "1.2.7"
   }
 }
