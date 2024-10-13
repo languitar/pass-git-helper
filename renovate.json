@@ -14,7 +14,7 @@
       ],
       "depNameTemplate": "node-version",
       "datasourceTemplate": "node-version"
-    },
+    }
   ],
   "packageRules": [
     {
