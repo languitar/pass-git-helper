@@ -15,5 +15,11 @@
       "depNameTemplate": "node-version",
       "datasourceTemplate": "node-version"
     },
+  ],
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "automerge": true
+    }
   ]
 }
