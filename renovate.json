@@ -1,14 +1,18 @@
 {
   "extends": [
-    "config:base"
+    "config:recommended"
   ],
   "pip_requirements": {
-    "fileMatch": ["^requirements.*\\.txt$"]
+    "fileMatch": [
+      "^requirements.*\\.txt$"
+    ]
   },
   "customManagers": [
     {
       "customType": "regex",
-      "fileMatch": ["^\\.github/.*\\.ya?ml$"],
+      "fileMatch": [
+        "^\\.github/.*\\.ya?ml$"
+      ],
       "matchStrings": [
         "node-version: (?<currentValue>.*)"
       ],
@@ -18,7 +22,12 @@
   ],
   "packageRules": [
     {
-      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
       "automerge": true
     }
   ]
