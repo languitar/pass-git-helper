@@ -347,7 +347,7 @@ def define_pass_target(
     section: configparser.SectionProxy, request: Mapping[str, str]
 ) -> str:
     """Determine the pass target by filling in potentially used variables."""
-    pass_target = section.get("target").replace("${host}", request["host"])
+    pass_target = section["target"].replace("${host}", request["host"])
     if "username" in request:
         pass_target = pass_target.replace("${username}", request["username"])
     if "protocol" in request:
@@ -387,7 +387,7 @@ def get_password(
     password_extractor = SpecificLineExtractor(0, 0, option_suffix="_password")
     password_extractor.configure(section)
 
-    username_extractor_name = section.get(
+    username_extractor_name: str = section.get(  # type: ignore
         "username_extractor", fallback=_line_extractor_name
     )
     username_extractor = _username_extractors.get(username_extractor_name)
