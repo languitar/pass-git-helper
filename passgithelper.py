@@ -391,9 +391,14 @@ def get_password(
 
     pass_target = define_pass_target(section, request)
 
-    password_extractor = _password_extractors[
-        section.get("password_extractor", fallback=_line_extractor_name)
-    ]
+    password_extractor_name: str = section.get(  # type: ignore
+        "password_extractor", fallback=_line_extractor_name
+    )
+    password_extractor = _password_extractors.get(password_extractor_name)
+    if password_extractor is None:
+        raise ValueError(
+            f"A password_extractor of type '{password_extractor_name}' does not exist"
+        )
     password_extractor.configure(section)
 
     username_extractor_name: str = section.get(  # type: ignore
