@@ -18,12 +18,12 @@
       {
         "replacements": [
           {
-            "files": ["setup.py"],
-            "from": "version=\".*\"",
-            "to": "version=\"${nextRelease.version}\"",
+            "files": ["passgithelper.py"],
+            "from": "__version__ = \".*\"",
+            "to": "__version__ = \"${nextRelease.version}\"",
             "results": [
               {
-                "file": "setup.py",
+                "file": "passgithelper.py",
                 "hasChanged": true,
                 "numMatches": 1,
                 "numReplacements": 1
@@ -37,7 +37,7 @@
     [
       "@semantic-release/git",
       {
-        "assets": ["setup.py"]
+        "assets": ["passgithelper.py"]
      }
     ],
     "@semantic-release/github"
