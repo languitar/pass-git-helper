@@ -22,7 +22,7 @@ from typing import Dict, IO, Mapping, Optional, Pattern, Sequence, Text
 import xdg.BaseDirectory
 
 
-__version__ = "3.1.0"
+__version__ = "3.2.0"
 
 LOGGER = logging.getLogger()
 CONFIG_FILE_NAME = "git-pass-mapping.ini"
@@ -314,6 +314,13 @@ _username_extractors = {
     ),
     "entry_name": EntryNameExtractor(option_suffix="_username"),
 }
+_password_extractors = {
+    _line_extractor_name: SpecificLineExtractor(0, 0, option_suffix="_password"),
+    "regex_search": RegexSearchExtractor(
+        r"^password: +(.*)$", option_suffix="_password"
+    ),
+    "entry_name": EntryNameExtractor(option_suffix="_password"),
+}
 
 
 def find_mapping_section(
@@ -386,7 +393,17 @@ def get_password(
 
     pass_target = define_pass_target(section, request)
 
-    password_extractor = SpecificLineExtractor(0, 0, option_suffix="_password")
+    password_extractor_name: str = section.get("password_extractor")  # type: ignore
+
+    if password_extractor_name:
+        password_extractor = _password_extractors.get(password_extractor_name)
+    else:
+        password_extractor = SpecificLineExtractor(0, 0, option_suffix="_password")
+
+    if password_extractor is None:
+        raise ValueError(
+            f"A password_extractor of type '{password_extractor_name}' does not exist"
+        )
     password_extractor.configure(section)
 
     username_extractor_name: str = section.get(  # type: ignore
