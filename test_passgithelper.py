@@ -373,7 +373,7 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_select_unknown_extractor(self, capsys: Any) -> None:
+    def test_select_unknown_username_extractor(self, capsys: Any) -> None:
         with pytest.raises(SystemExit):
             passgithelper.main(["get"])
         _, err = capsys.readouterr()
@@ -383,7 +383,7 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/regex-extraction",
+                "test_data/regex-username-extraction",
                 """
 protocol=https
 host=mytest.com""",
@@ -420,6 +420,47 @@ host=mytest.com""",
 
         out, _ = capsys.readouterr()
         assert out == "password=xyz\nusername=myuser\n"
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                "test_data/unknown-password-extractor",
+                """
+protocol=https
+host=mytest.com""",
+                b"ignored",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_select_unknown_password_extractor(self, capsys: Any) -> None:
+        with pytest.raises(SystemExit):
+            passgithelper.main(["get"])
+        _, err = capsys.readouterr()
+        assert "password_extractor of type 'doesntexist' does not exist" in err
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                "test_data/regex-password-extraction",
+                """
+protocol=https
+host=mytest.com""",
+                b"xyz\nsomeline\nmyauth: mygreattoken\nmorestuff\nmyuser: tester\n",
+                "dev/mytest",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_regex_password_selection(self, capsys: Any) -> None:
+        passgithelper.main(["get"])
+
+        out, _ = capsys.readouterr()
+        assert out == "password=mygreattoken\nusername=tester\n"
 
     @pytest.mark.parametrize(
         "helper_config",

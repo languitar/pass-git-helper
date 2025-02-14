@@ -319,7 +319,6 @@ _password_extractors = {
     "regex_search": RegexSearchExtractor(
         r"^password: +(.*)$", option_suffix="_password"
     ),
-    "entry_name": EntryNameExtractor(option_suffix="_password"),
 }
 
 
