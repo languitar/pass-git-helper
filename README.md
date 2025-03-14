@@ -191,7 +191,8 @@ The following strategies can be configured:
 
 #### Specific Line Extraction (default)
 
-Extracts the password from a specified line indexed by its line number. Optionally, a fixed-length prefix can be stripped before returning the line contents.
+Extracts the password from a specified line indexed by its line number.
+Optionally, a fixed-length prefix can be stripped before returning the line contents.
 
 Configuration:
 
@@ -200,7 +201,8 @@ Configuration:
 
 #### Regex Extraction
 
-Uses a regular expression to search for the password in the entry. The first line that matches the provided regular expression will be used, and the contents captured in a regular expression capture group will be returned.
+Uses a regular expression to search for the password in the entry.
+The first line that matches the provided regular expression will be used, and the contents captured in a regular expression capture group will be returned.
 
 Configuration:
 
