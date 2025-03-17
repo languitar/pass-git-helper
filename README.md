@@ -264,7 +264,6 @@ Optionally a fixed-length prefix can be stripped before returning the line conte
 Configuration:
 
 * `line_username`: Line number containing the username, **0-based**. Default: 1 (second line)
-* `skip_username`: Number of characters to skip at the beginning of the line, for instance to skip a `user:` prefix. Similar to `skip_password`. Default: 0.
 
 #### Strategy "regex_search"
 
