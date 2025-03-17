@@ -185,7 +185,20 @@ password_store_dir=/home/me/.work-passwords
 ### Password
 
 As usual with [pass], this helper assumes that the password is contained in the first line of the password store entry.
-However, two strategies for extracting passwords are implemented, allowing for more flexibility in handling prefixes.
+Although uncommon, it is possible to strip a prefix from the data of the first line (such as `password:` by specifying an amount of characters to leave out in the `skip_password` field for an entry or also in the `[DEFAULT]` section to apply for all entries:
+
+```ini
+[DEFAULT]
+# length of "password: "
+skip_password=10
+
+[somedomain]
+# for some reasons, this entry doesn't have a password prefix
+skip_password=0
+target=special/noprefix
+```
+
+However, other two strategies for extracting passwords are implemented, allowing for more flexibility in handling prefixes.
 
 The following strategies can be configured:
 
@@ -196,8 +209,8 @@ Optionally, a fixed-length prefix can be stripped before returning the line cont
 
 Configuration:
 
-- `line_password`: Line number containing the password, **0-based**. Default: 0 (first line).
-- `skip_password`: Number of characters to skip at the beginning of the line, for instance, to skip a `password:` prefix. Default: 0.
+* `line_password`: Line number containing the password, **0-based**. Default: 0 (first line).
+* `skip_password`: Number of characters to skip at the beginning of the line, for instance, to skip a `password:` prefix. Default: 0.
 
 #### Regex Extraction
 
@@ -206,8 +219,8 @@ The first line that matches the provided regular expression will be used, and th
 
 Configuration:
 
-- `regex_password`: The regular expression to apply. It must contain a single capture group for indicating the data to extract. Default: `^password: +(.*)$`.
-- `skip_password`: Number of characters to skip at the beginning of the matched line. Default: 0.
+* `regex_password`: The regular expression to apply. It must contain a single capture group for indicating the data to extract. Default: `^password: +(.*)$`.
+* `skip_password`: Number of characters to skip at the beginning of the matched line. Default: 0.
 
 ```ini
 
@@ -251,8 +264,8 @@ Optionally a fixed-length prefix can be stripped before returning the line conte
 
 Configuration:
 
-- `line_username`: Line number containing the username, **0-based**. Default: 1 (second line)
-- `skip_username`: Number of characters to skip at the beginning of the line, for instance to skip a `user:` prefix. Similar to `skip_password`. Default: 0.
+* `line_username`: Line number containing the username, **0-based**. Default: 1 (second line)
+* `skip_username`: Number of characters to skip at the beginning of the line, for instance to skip a `user:` prefix. Similar to `skip_password`. Default: 0.
 
 #### Strategy "regex_search"
 
@@ -262,7 +275,7 @@ Internally, [Python regular expressions](https://docs.python.org/3/library/re.ht
 
 Configuration:
 
-- `regex_username`: The regular expression to apply. Has to contain a single capture group for indicating the data to extract.
+* `regex_username`: The regular expression to apply. Has to contain a single capture group for indicating the data to extract.
   In case your regular expression requires parentheses for matching parts that are not the username, you can use non-capturing parentheses (i.e., `(?:...)`).
   Default: `^username: +(.*)$`.
 
