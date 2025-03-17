@@ -210,7 +210,6 @@ Optionally, a fixed-length prefix can be stripped before returning the line cont
 Configuration:
 
 * `line_password`: Line number containing the password, **0-based**. Default: 0 (first line).
-* `skip_password`: Number of characters to skip at the beginning of the line, for instance, to skip a `password:` prefix. Default: 0.
 
 #### Regex Extraction
 
