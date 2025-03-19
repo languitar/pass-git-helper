@@ -185,7 +185,7 @@ password_store_dir=/home/me/.work-passwords
 ### Password
 
 As usual with [pass], this helper assumes that the password is contained in the first line of the password store entry.
-Though uncommon, it is possible to strip a prefix from the data of the first line (such as `password:` by specifying an amount of characters to leave out in the `skip_password` field for an entry or also in the `[DEFAULT]` section to apply for all entries:
+Although uncommon, it is possible to strip a prefix from the data of the first line (such as `password:` by specifying an amount of characters to leave out in the `skip_password` field for an entry or also in the `[DEFAULT]` section to apply for all entries:
 
 ```ini
 [DEFAULT]
@@ -196,6 +196,45 @@ skip_password=10
 # for some reasons, this entry doesn't have a password prefix
 skip_password=0
 target=special/noprefix
+```
+
+However, other two strategies for extracting passwords are implemented, allowing for more flexibility in handling prefixes.
+
+The following strategies can be configured:
+
+#### Specific Line Extraction (default)
+
+Extracts the password from a specified line indexed by its line number.
+Optionally, a fixed-length prefix can be stripped before returning the line contents.
+
+Configuration:
+
+* `line_password`: Line number containing the password, **0-based**. Default: 0 (first line).
+
+#### Regex Extraction
+
+Uses a regular expression to search for the password in the entry.
+The first line that matches the provided regular expression will be used, and the contents captured in a regular expression capture group will be returned.
+
+Configuration:
+
+* `regex_password`: The regular expression to apply. It must contain a single capture group for indicating the data to extract. Default: `^password: +(.*)$`.
+* `skip_password`: Number of characters to skip at the beginning of the matched line. Default: 0.
+
+```ini
+
+[DEFAULT]
+password_extractor=specific_line
+line_password=0
+# length of "password: "
+skip_password=10
+
+
+[example.com]
+# For some reason, this entry doesn't have a password prefix
+password_extractor=regex_search
+regex_password=^token: +(.*)$
+skip_password=0
 ```
 
 ### Username
@@ -225,7 +264,6 @@ Optionally a fixed-length prefix can be stripped before returning the line conte
 Configuration:
 
 * `line_username`: Line number containing the username, **0-based**. Default: 1 (second line)
-* `skip_username`: Number of characters to skip at the beginning of the line, for instance to skip a `user:` prefix. Similar to `skip_password`. Default: 0.
 
 #### Strategy "regex_search"
 
