@@ -284,6 +284,21 @@ For instance, if a regular [pass] call would be `pass show dev/github.com/langui
 
 No configuration options.
 
+#### Strategy "static"
+
+Allows defining the username in the mapping file using the `username` key.
+
+Example:
+
+```ini
+[DEFAULT]
+username_extractor=static
+username = myuser
+
+[example.com]
+username = myexampleusername
+```
+
 ### File Encoding
 
 By default, password store entries are assumed to use UTF-8 encoding.
