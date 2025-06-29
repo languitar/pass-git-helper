@@ -137,6 +137,59 @@ class TestEntryNameExtractor:
         assert passgithelper.EntryNameExtractor().get_value("foo/bar", []) == "bar"
 
 
+class TestStaticUsernameExtractor:
+    def test_extracts_username_from_config(self) -> None:
+        config = configparser.ConfigParser()
+        config.read_string("""[test]
+username = address@example.com
+""")
+        
+        extractor = passgithelper.StaticUsernameExtractor()
+        extractor.configure(config["test"])
+        
+        assert extractor.get_value("any/entry", ["any", "lines"]) == "address@example.com"
+
+    def test_returns_none_when_no_username_configured(self) -> None:
+        config = configparser.ConfigParser()
+        config.read_string("""[test]
+target = some/target
+""")
+        
+        extractor = passgithelper.StaticUsernameExtractor()
+        extractor.configure(config["test"])
+        
+        assert extractor.get_value("any/entry", ["any", "lines"]) is None
+
+    def test_inherits_from_default_section(self) -> None:
+        config = configparser.ConfigParser()
+        config.read_string("""[DEFAULT]
+username = default@example.com
+
+[test]
+target = some/target
+""")
+        
+        extractor = passgithelper.StaticUsernameExtractor()
+        extractor.configure(config["test"])
+        
+        assert extractor.get_value("any/entry", ["any", "lines"]) == "default@example.com"
+
+    def test_section_overrides_default(self) -> None:
+        config = configparser.ConfigParser()
+        config.read_string("""[DEFAULT]
+username = default@example.com
+
+[test]
+target = some/target
+username = override@example.com
+""")
+        
+        extractor = passgithelper.StaticUsernameExtractor()
+        extractor.configure(config["test"])
+        
+        assert extractor.get_value("any/entry", ["any", "lines"]) == "override@example.com"
+
+
 @pytest.mark.parametrize(
     "helper_config",
     [

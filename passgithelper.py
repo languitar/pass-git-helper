@@ -306,6 +306,23 @@ class EntryNameExtractor(DataExtractor):
         return os.path.split(entry_name)[1]
 
 
+class StaticUsernameExtractor:
+    """Extract username from a static field in the mapping configuration."""
+
+    def __init__(self) -> None:
+        self._username = None
+
+    def configure(self, config: configparser.SectionProxy) -> None:
+        """Store the username from the mapping configuration."""
+        self._username = config.get("username")
+
+    def get_value(
+        self, entry_name: Text, entry_lines: Sequence[Text]  # noqa: ARG002
+    ) -> Optional[Text]:
+        """Return the stored username."""
+        return self._username
+
+
 _line_extractor_name = "specific_line"
 _username_extractors = {
     _line_extractor_name: SpecificLineExtractor(1, 0, option_suffix="_username"),
@@ -313,6 +330,7 @@ _username_extractors = {
         r"^username: +(.*)$", option_suffix="_username"
     ),
     "entry_name": EntryNameExtractor(option_suffix="_username"),
+    "static": StaticUsernameExtractor(),
 }
 _password_extractors = {
     _line_extractor_name: SpecificLineExtractor(0, 0, option_suffix="_password"),
