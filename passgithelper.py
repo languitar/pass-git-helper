@@ -103,7 +103,7 @@ def parse_mapping(mapping_file: Optional[IO]) -> configparser.ConfigParser:
             "Please create {config_file}".format(config_file=DEFAULT_CONFIG_FILE)
         )
     default_file = Path(xdg_config_dir) / CONFIG_FILE_NAME
-    LOGGER.debug("Parsing mapping file %s", mapping_file)
+    LOGGER.debug("Parsing mapping file %s", default_file)
     with default_file.open("r") as file_handle:
         return parse(file_handle)
 
