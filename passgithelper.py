@@ -5,19 +5,17 @@
 .. codeauthor:: Johannes Wienke
 """
 
-
 import abc
 import argparse
 import configparser
 import fnmatch
 import logging
 import os
-import os.path
 from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Dict, IO, Mapping, Optional, Pattern, Sequence, Text
+from typing import IO, Mapping, Optional, Pattern, Sequence, Text
 
 import xdg.BaseDirectory
 
@@ -108,7 +106,7 @@ def parse_mapping(mapping_file: Optional[IO]) -> configparser.ConfigParser:
         return parse(file_handle)
 
 
-def parse_request() -> Dict[str, str]:
+def parse_request() -> dict[str, str]:
     """Parse the request of the git credential API from stdin.
 
     Returns:
@@ -189,11 +187,10 @@ class SkippingDataExtractor(DataExtractor):
         super().__init__(option_suffix)
         self._prefix_length = prefix_length
 
-    @abc.abstractmethod
     def configure(self, config: configparser.SectionProxy) -> None:
         """Configure the amount of characters to skip."""
         self._prefix_length = config.getint(
-            "skip{suffix}".format(suffix=self._option_suffix),
+            f"skip{self._option_suffix}",
             fallback=self._prefix_length,
         )
 
@@ -232,9 +229,7 @@ class SpecificLineExtractor(SkippingDataExtractor):
     def configure(self, config: configparser.SectionProxy) -> None:
         """See base class method."""
         super().configure(config)
-        self._line = config.getint(
-            "line{suffix}".format(suffix=self._option_suffix), fallback=self._line
-        )
+        self._line = config.getint(f"line{self._option_suffix}", fallback=self._line)
 
     def _get_raw(
         self, entry_name: Text, entry_lines: Sequence[Text]  # noqa: ARG002
@@ -266,8 +261,8 @@ class RegexSearchExtractor(DataExtractor):
         matcher = re.compile(regex)
         if matcher.groups != 1:
             raise ValueError(
-                'Provided regex "{regex}" must contain a single '
-                "capture group for the value to return.".format(regex=regex)
+                f'Provided regex "{regex}" must contain a single '
+                "capture group for the value to return."
             )
         return matcher
 
@@ -275,7 +270,7 @@ class RegexSearchExtractor(DataExtractor):
         """See base class method."""
         self._regex = self._build_matcher(
             config.get(
-                "regex{suffix}".format(suffix=self._option_suffix),
+                f"regex{self._option_suffix}",
                 fallback=self._regex.pattern,
             )
         )
@@ -446,9 +441,9 @@ def get_password(
     password = password_extractor.get_value(pass_target, lines)
     username = username_extractor.get_value(pass_target, lines)
     if password:
-        print("password={password}".format(password=password))  # noqa: T201
+        print(f"password={password}")  # noqa: T201
     if "username" not in request and username:
-        print("username={username}".format(username=username))  # noqa: T201
+        print(f"username={username}")  # noqa: T201
 
 
 def handle_skip() -> None:
@@ -481,18 +476,14 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         mapping = parse_mapping(args.mapping)
     except Exception as error:  # ok'ish for the main function
         LOGGER.critical("Unable to parse mapping file", exc_info=True)
-        print(  # noqa: T201
-            "Unable to parse mapping file: {error}".format(error=error), file=sys.stderr
-        )
+        print(f"Unable to parse mapping file: {error}", file=sys.stderr)  # noqa: T201
         sys.exit(1)
 
     if action == "get":
         try:
             get_password(request, mapping)
         except Exception as error:  # ok'ish for the main function
-            print(  # noqa: T201
-                "Unable to retrieve entry: {error}".format(error=error), file=sys.stderr
-            )
+            print(f"Unable to retrieve entry: {error}", file=sys.stderr)  # noqa: T201
             sys.exit(1)
     else:
         LOGGER.info("Action %s is currently not supported", action)
