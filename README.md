@@ -211,6 +211,16 @@ Configuration:
 
 * `line_password`: Line number containing the password, **0-based**. Default: 0 (first line).
 
+```ini
+[DEFAULT]
+# This overrides the default and assumes the password is on the second line (line 1)
+line_password=1
+
+[example.com]
+# This assumes the password is on the first line of the pass entry (default)
+line_password=0
+```
+
 #### Regex Extraction
 
 Uses a regular expression to search for the password in the entry.
@@ -240,7 +250,10 @@ skip_password=0
 ### Username
 
 `pass-git-helper` can also provide the username necessary for authenticating at a server.
-In contrast to the password, no clear convention exists how username information is stored in password entries.
+Unlike the password (which is expected to be in the **first line** (by default) of a `pass` entry), the username has no fixed convention.
+
+However, if you want `pass-git-helper` to return a `username`, you **must ensure your `pass` entry actually contains it**. (Or if you're using the `static` stratey, your mapping must have the `username` key. See more below.)
+
 Therefore, multiple strategies to extract the username are implemented and can be selected globally for the whole password store in the `[DEFAULT]` section, or individually for certain entries using the `username_extractor` key:
 
 ```ini
@@ -264,6 +277,16 @@ Optionally a fixed-length prefix can be stripped before returning the line conte
 Configuration:
 
 * `line_username`: Line number containing the username, **0-based**. Default: 1 (second line)
+
+```ini
+[DEFAULT]
+# This assumes the username is on the second line of the pass entry (default)
+line_username=1
+
+[example.com]
+# This overrides the default and assumes the username is on the first line (line 0)
+line_username=0
+```
 
 #### Strategy "regex_search"
 
