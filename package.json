@@ -3,7 +3,7 @@
     "node": ">=0.18"
   },
   "devDependencies": {
-    "@commitlint/cli": "20.0.0",
+    "@commitlint/cli": "20.1.0",
     "@commitlint/config-conventional": "20.0.0",
     "conventional-changelog-conventionalcommits": "^9.0.0",
     "@semantic-release/changelog": "6.0.3",
