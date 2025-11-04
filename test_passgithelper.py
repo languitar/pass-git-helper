@@ -346,6 +346,29 @@ path=subpath/bar.git""",
         "helper_config",
         [
             HelperConfig(
+                "test_data/wildcard_path",
+                """
+protocol=https
+host=path_wildcard.com
+username=path_wildcard
+path=subpath/bar.git""",
+                b"daniele-tentoni-path-wildcard",
+                "dev/https/path_wildcard.com/path_wildcard/subpath/bar.git",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_wildcard_path_matching(self, capsys: Any) -> None:
+        passgithelper.main(["get"])
+
+        out, _ = capsys.readouterr()
+        assert out == "password=daniele-tentoni-path-wildcard\n"
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
                 "test_data/with-username",
                 """
 host=plainline.com""",
