@@ -138,7 +138,14 @@ target=git-logins/${host}
 
 The above configuration directive will lead to any host that did not match any previous section in the ini file to being looked up under the `git-logins` directory in your password store.
 
-Apart from `${host}`, the variables `${username}` and `${protocol}` can be used for replacements.
+Apart from `${host}`, the variables `${username}`, `${path}` and `${protocol}` can be used for replacements. Given the remote url `https://github.com/languitar/pass-git-helper.git`, variables are filled as follow:
+
+| var | value |
+| --- | --- |
+| `${host}` | `github.com` |
+| `${username}` | `languitar` |
+| `${path}` | `languitar/pass-git-helper.git` |
+| `${protocol}` | `https` |
 
 #### DEFAULT Section
 

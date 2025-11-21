@@ -369,6 +369,9 @@ def define_pass_target(
 ) -> str:
     """Determine the pass target by filling in potentially used variables."""
     pass_target = section["target"].replace("${host}", request["host"])
+
+    if "path" in request:
+        pass_target = pass_target.replace("${path}", request["path"])
     if "username" in request:
         pass_target = pass_target.replace("${username}", request["username"])
     if "protocol" in request:
