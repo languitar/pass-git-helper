@@ -3,15 +3,15 @@
     "config:recommended"
   ],
   "pip_requirements": {
-    "fileMatch": [
-      "^requirements.*\\.txt$"
+    "managerFilePatterns": [
+      "/^requirements.*\\.txt$/"
     ]
   },
   "customManagers": [
     {
       "customType": "regex",
-      "fileMatch": [
-        "^\\.github/.*\\.ya?ml$"
+      "managerFilePatterns": [
+        "/^\\.github/.*\\.ya?ml$/"
       ],
       "matchStrings": [
         "node-version: (?<currentValue>.*)"
