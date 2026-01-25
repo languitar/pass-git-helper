@@ -1,6 +1,6 @@
 import configparser
-from dataclasses import dataclass
 import io
+from dataclasses import dataclass
 from subprocess import CalledProcessError
 from typing import Any, Iterable, Optional, Sequence, Text
 from unittest.mock import ANY
@@ -114,20 +114,16 @@ class TestRegexSearchExtractor:
     def test_configuration(self) -> None:
         extractor = passgithelper.RegexSearchExtractor("^username: (.*)$", "_username")
         config = configparser.ConfigParser()
-        config.read_string(
-            r"""[test]
-regex_username=^foo: (.*)$"""
-        )
+        config.read_string(r"""[test]
+regex_username=^foo: (.*)$""")
         extractor.configure(config["test"])
         assert extractor._regex.pattern == r"^foo: (.*)$"
 
     def test_configuration_checks_groups(self) -> None:
         extractor = passgithelper.RegexSearchExtractor("^username: (.*)$", "_username")
         config = configparser.ConfigParser()
-        config.read_string(
-            r"""[test]
-regex_username=^foo: .*$"""
-        )
+        config.read_string(r"""[test]
+regex_username=^foo: .*$""")
         with pytest.raises(ValueError, match="must contain"):
             extractor.configure(config["test"])
 
@@ -140,11 +136,9 @@ class TestEntryNameExtractor:
 class TestStaticUsernameExtractor:
     def test_extracts_username_from_config(self) -> None:
         config = configparser.ConfigParser()
-        config.read_string(
-            """[test]
+        config.read_string("""[test]
 username = address@example.com
-"""
-        )
+""")
 
         extractor = passgithelper.StaticUsernameExtractor()
         extractor.configure(config["test"])
@@ -155,11 +149,9 @@ username = address@example.com
 
     def test_returns_none_when_no_username_configured(self) -> None:
         config = configparser.ConfigParser()
-        config.read_string(
-            """[test]
+        config.read_string("""[test]
 target = some/target
-"""
-        )
+""")
 
         extractor = passgithelper.StaticUsernameExtractor()
         extractor.configure(config["test"])
@@ -168,14 +160,12 @@ target = some/target
 
     def test_inherits_from_default_section(self) -> None:
         config = configparser.ConfigParser()
-        config.read_string(
-            """[DEFAULT]
+        config.read_string("""[DEFAULT]
 username = default@example.com
 
 [test]
 target = some/target
-"""
-        )
+""")
 
         extractor = passgithelper.StaticUsernameExtractor()
         extractor.configure(config["test"])
@@ -186,15 +176,13 @@ target = some/target
 
     def test_section_overrides_default(self) -> None:
         config = configparser.ConfigParser()
-        config.read_string(
-            """[DEFAULT]
+        config.read_string("""[DEFAULT]
 username = default@example.com
 
 [test]
 target = some/target
 username = override@example.com
-"""
-        )
+""")
 
         extractor = passgithelper.StaticUsernameExtractor()
         extractor.configure(config["test"])

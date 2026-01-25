@@ -11,14 +11,13 @@ import configparser
 import fnmatch
 import logging
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
+from pathlib import Path
 from typing import IO, Mapping, Optional, Pattern, Sequence, Text
 
 import xdg.BaseDirectory
-
 
 __version__ = "4.1.0"
 
