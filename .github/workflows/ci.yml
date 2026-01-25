@@ -24,7 +24,7 @@ jobs:
     steps:
       - name: Clone repo
         uses: actions/checkout@v6
-      - name: Set up Python 3.8
+      - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.14"
@@ -52,7 +52,7 @@ jobs:
     strategy:
       max-parallel: 4
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - name: Clone repo
