@@ -7,6 +7,8 @@
       "/^requirements.*\\.txt$/"
     ]
   },
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
   "customManagers": [
     {
       "customType": "regex",
