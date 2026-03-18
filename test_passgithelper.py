@@ -1,5 +1,4 @@
 import configparser
-import io
 from dataclasses import dataclass
 from subprocess import CalledProcessError
 from typing import Any, Iterable, Optional, Sequence, Text
@@ -24,8 +23,9 @@ def helper_config(mocker: MockerFixture, request: Any) -> Iterable[Any]:
     xdg_mock = mocker.patch("xdg.BaseDirectory.load_first_config")
     xdg_mock.return_value = request.param.xdg_dir
 
-    mocker.patch("sys.stdin.readlines").return_value = io.StringIO(
-        request.param.request
+    mocker.patch(
+        "sys.stdin.readlines",
+        return_value=request.param.request.splitlines(keepends=True),
     )
 
     subprocess_mock = mocker.patch("subprocess.check_output")

@@ -112,7 +112,7 @@ def parse_request() -> dict[str, str]:
         A dictionary with all key-value pairs of the request
     """
     in_lines = sys.stdin.readlines()
-    LOGGER.debug('Received request "%s"', in_lines)
+    LOGGER.debug('Received request (raw) "%s"', in_lines)
 
     request = {}
     for line in in_lines:
@@ -400,10 +400,9 @@ def get_password(
         mapping:
             The mapping configuration as a ConfigParser instance.
     """
-    LOGGER.debug('Received request "%s"', request)
-
     header = get_request_section_header(request)
     section = find_mapping_section(mapping, header)
+    LOGGER.debug("Found mapping section:\n%s", dict(section))
 
     pass_target = define_pass_target(section, request)
 
@@ -419,6 +418,7 @@ def get_password(
             f"A password_extractor of type '{password_extractor_name}' does not exist"
         )
     password_extractor.configure(section)
+    LOGGER.debug('Password extractor: "%s"', type(password_extractor))
 
     username_extractor_name: str = section.get(
         "username_extractor", fallback=_line_extractor_name
@@ -429,6 +429,7 @@ def get_password(
             f"A username_extractor of type '{username_extractor_name}' does not exist"
         )
     username_extractor.configure(section)
+    LOGGER.debug('Username extractor: "%s"', type(username_extractor))
 
     environment = compute_pass_environment(section)
 
@@ -439,12 +440,15 @@ def get_password(
         ["pass", "show", pass_target], env=environment
     ).decode(section.get("encoding", "UTF-8"))
     lines = output.splitlines()
+    LOGGER.debug("Password store entry lines:\n%s", "\n".join(lines))
 
     password = password_extractor.get_value(pass_target, lines)
     username = username_extractor.get_value(pass_target, lines)
     if password:
+        LOGGER.debug("Found password: '%s'", password)
         print(f"password={password}")  # noqa: T201
     if "username" not in request and username:
+        LOGGER.debug("Found username: '%s'", username)
         print(f"username={username}")  # noqa: T201
 
 
