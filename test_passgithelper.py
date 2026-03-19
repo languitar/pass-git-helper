@@ -3,6 +3,7 @@ import logging
 from collections.abc import Generator, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass
+from os import getenv, pathsep
 from pathlib import Path
 from subprocess import CalledProcessError
 from typing import ClassVar, Text, TypeAlias, cast
@@ -174,11 +175,14 @@ def teardown_helper_capsys_checks(
         assert not err
 
 
-@pytest.fixture
-def helper_config(
-    mocker: MockerFixture, request: pytest.FixtureRequest
-) -> Generator[HelperConfigAndMock]:
-    test_params = cast("HelperConfig", request.param)
+def setup_helper_load_first_config_and_request(
+    mocker: MockerFixture, test_params: HelperConfig
+) -> None:
+    """Use values from ``test_params`` to setup ``load_first_config()`` and ``readlines()`` mocks.
+
+    Intended to be called from a test fixture or directly from a test.
+
+    """
     _ = mocker.patch(
         "xdg.BaseDirectory.load_first_config", return_value=test_params.xdg_dir
     )
@@ -187,6 +191,15 @@ def helper_config(
         "sys.stdin.readlines",
         return_value=test_params.request.splitlines(keepends=True),
     )
+
+
+@pytest.fixture
+def helper_config(
+    mocker: MockerFixture, request: pytest.FixtureRequest
+) -> Generator[HelperConfigAndMock]:
+    test_params = cast("HelperConfig", request.param)
+
+    setup_helper_load_first_config_and_request(mocker, test_params)
 
     if test_params.patch_check_password_file:
         _ = mocker.patch("passgithelper.check_password_file")
@@ -1068,6 +1081,44 @@ host=example.com""",
         assert password_store_dir == Path(pws_dir_expected).expanduser()
 
 
+@pytest.fixture
+def setup_mock_gpg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Manipulatest ``PATH`` in order to get ``pass`` to use the local mock gpg(2)."""
+    gpg_mock_dir = str(Path.cwd() / "test_data" / "dummy-password-store" / "bin")
+    monkeypatch.setenv("PATH", gpg_mock_dir, prepend=pathsep)
+
+
+@pytest.fixture
+def setup_teardown_wo_subprocess_mock(
+    capsys: CapsysType,
+    mocker: MockerFixture,
+    request: pytest.FixtureRequest,
+) -> Generator[HelperConfig]:
+    """Simplified setup/teardown fixture for ``passgithelper.main`` tests.
+
+    This is for tests which don't require the ``subprocess.check_output`` mock.
+    """
+    test_params = cast("HelperConfig", request.param)
+
+    setup_helper_load_first_config_and_request(mocker, test_params)
+
+    password_store_dir = Path.cwd() / "test_data" / "dummy-password-store"
+    setup_helper_parse_request_mock(
+        mocker,
+        test_params,
+        use_wildcard_section=True,
+        # make sure that `pass` uses the dummy password store
+        password_store_dir=str(password_store_dir),
+        username_extractor="regex_search",
+    )
+
+    yield test_params
+
+    teardown_helper_capsys_checks(capsys, test_params)
+
+
 class TestScriptCheckPasswordFile:
     """Test the ``check_password_file(..)`` function."""
 
@@ -1131,7 +1182,7 @@ class TestScriptCheckPasswordFile:
         argvalues=argvalues_check_password_file,
         indirect=True,
     )
-    def test_function_check_password_file_with_mocked_pass_cli(
+    def test_function_check_password_file_with_mocked_pass(
         self,
         mocker: MockerFixture,
         capsys: CapsysType,
@@ -1165,3 +1216,51 @@ class TestScriptCheckPasswordFile:
             passgithelper.main(["get"])
 
         teardown_helper_capsys_checks(capsys, test_params)
+
+    @pytest.mark.skipif(
+        condition=not getenv("PGH_ENABLE_TESTS_WITH_REAL_PASS"),
+        reason="Tests require the `pass`word store CLI command.",
+    )
+    @pytest.mark.parametrize(
+        argnames="setup_teardown_wo_subprocess_mock",
+        argvalues=argvalues_check_password_file,
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("setup_mock_gpg")
+    def test_function_check_password_file_with_real_pass(
+        self,
+        setup_teardown_wo_subprocess_mock: HelperConfig,
+    ) -> None:
+        """Test function ``check_password_file(..)`` with real ``pass`` executable.
+
+        The test is nearly identical to
+        ``test_function_check_password_file_with_mocked_pass``. However, instead
+        of mocking ``pass`` sub-process calls, it uses the real ``pass``
+        executable.
+
+        To allow ``pass``, to work with the unencrypted dummy password files in
+        ``test_data/dummy-password-store``, it manipulates PATH (via the
+        ``setup_mock_gpg`` fixture) so that mock ``gpg`` (and ``gpg2``)
+        executables in ``test_data/dummy-password-store/bin`` are used instead
+        of the real ones. The ``gpg`` mock just ``cat``s the content of the
+        first command line option which matches an existing file to stdout or,
+        if no such file is found, exits with exit_code=1.
+
+        By default, since `pass` may not be available in every test environment,
+        the new tests are skipped. To include them, run the tests with the
+        `PGH_ENABLE_TESTS_WITH_REAL_PASS` environment variable set to a
+        non-empty value.
+
+        Examples:
+            PGH_ENABLE_TESTS_WITH_REAL_PASS=1 pytest
+            PGH_ENABLE_TESTS_WITH_REAL_PASS=1 tox
+
+        """
+        test_params = setup_teardown_wo_subprocess_mock
+
+        with (
+            pytest.raises(SystemExit, match=r"^3$")
+            if test_params.err_expected
+            else nullcontext()
+        ):
+            passgithelper.main(["get"])
