@@ -1,0 +1,19 @@
+#!/bin/sh
+
+# Dummy gpg executable which just dumps the content of the first reacheable file
+# argument to stdout.
+
+while [ ${#} -gt 0 ]; do
+    case "${1}" in
+        -*) : ;; # ignore
+        *)
+        if [ -f "${1}" ]; then
+            cat "${1}"
+            exit
+        fi
+        ;;
+    esac
+    shift
+done
+
+exit 1
