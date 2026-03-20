@@ -1,6 +1,7 @@
 import configparser
 import io
 from dataclasses import dataclass
+from pathlib import Path
 from subprocess import CalledProcessError
 from typing import Any, Iterable, Optional, Sequence, Text
 from unittest.mock import ANY
@@ -53,6 +54,27 @@ def test_handle_skip_exits(monkeypatch: Any) -> None:
     monkeypatch.setenv("PASS_GIT_HELPER_SKIP", "1")
     with pytest.raises(SystemExit):
         passgithelper.handle_skip()
+
+
+class TestPasswordStoreDirSelection:
+    """Test password store directory selection.
+
+    The password store directory used by ``pass`` can either be set via the
+    ``PASSWORD_STORE_DIR`` environment variable or via the
+    ``password_store_dir`` option in the ini file. In case both are present, the
+    ini file option overrides the environment variable.
+    """
+
+    def test_ini_file_option_overrides_environment(self, monkeypatch: Any) -> None:
+        ini = configparser.ConfigParser()
+
+        expected = "/tmp/password-store-from-ini"
+        # `PASSWORD_STORE_DIR` in environemnt, `password_store_dir` in ini file
+        # section -> value from ini file overrides env. variable
+        monkeypatch.setenv("PASSWORD_STORE_DIR", "/tmp/password-store-from-env")
+        ini["example.com"] = {"password_store_dir": expected}
+        env = passgithelper.compute_pass_environment(ini["example.com"])
+        assert env.get("PASSWORD_STORE_DIR") == expected
 
 
 class TestSkippingDataExtractor:
@@ -648,3 +670,36 @@ host=example.com""",
             helper_config.mock_calls[-1].kwargs["env"]["PASSWORD_STORE_DIR"]
             == "/some/dir"
         )
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                xdg_dir=None,
+                request="protocol=https\nhost=example.com\n",
+                entry_data=b"ignored",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_uses_password_store_dir_relative_to_home(
+        self, mocker: MockerFixture, helper_config: Any
+    ) -> None:
+        host = "example.com"
+        config = configparser.ConfigParser()
+        config[host] = {
+            "password_store_dir": "~/some/dir",
+            "target": "dev/mytest",
+        }
+        mocker.patch("passgithelper.parse_mapping", return_value=config)
+
+        passgithelper.main(["get"])
+
+        mock_co = helper_config
+        assert "env" in mock_co.call_args.kwargs
+        env = mock_co.call_args.kwargs["env"]
+        assert "PASSWORD_STORE_DIR" in env
+        password_store_dir = Path(env["PASSWORD_STORE_DIR"])
+        assert password_store_dir.is_absolute()
+        assert password_store_dir == Path("~/some/dir").expanduser()

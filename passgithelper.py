@@ -379,9 +379,28 @@ def define_pass_target(
 
 
 def compute_pass_environment(section: configparser.SectionProxy) -> Mapping[str, str]:
+    """Returns (extended) environment needed to start the ``pass`` subprocess.
+
+    A potential ``password_store_dir`` from ``section`` is used to update
+    ``PASSWORD_STORE_DIR`` of the returned environment.
+
+    As added benefit, the value of ``password_store_dir`` gets run through
+    ``pathlib.Path.expanduser(..)`` allowing for using a leading ``~`` in place
+    of the users ``HOME`` (or, on Windows, ``USERPROFILE``) directory.
+
+    Args:
+        section:
+            Ini file section which applies to the current password target.
+
+    Returns: A dictionary comprising a copy of the current process environment
+        with potentially added/updated ``PASSWORD_STORE_DIR`` value.
+
+    """
     environment = os.environ.copy()
     password_store_dir = section.get("password_store_dir")
     if password_store_dir:
+        # expand leading tilde
+        password_store_dir = str(Path(password_store_dir).expanduser())
         LOGGER.debug('Setting PASSWORD_STORE_DIR to "%s"', password_store_dir)
         environment["PASSWORD_STORE_DIR"] = password_store_dir
     return environment
