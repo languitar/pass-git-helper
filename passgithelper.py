@@ -19,7 +19,7 @@ from typing import IO, Mapping, Optional, Pattern, Sequence, Text
 
 import xdg.BaseDirectory
 
-__version__ = "4.1.0"
+__version__ = "4.2.0"
 
 LOGGER = logging.getLogger()
 CONFIG_FILE_NAME = "git-pass-mapping.ini"
