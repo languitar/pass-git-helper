@@ -475,7 +475,7 @@ def handle_skip() -> None:
     """Terminate the process if skipping is requested via an env variable."""
     if "PASS_GIT_HELPER_SKIP" in os.environ:
         LOGGER.info("Skipping processing as requested via environment variable")
-        sys.exit(1)
+        sys.exit(6)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
@@ -502,17 +502,17 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     except Exception as error:  # ok'ish for the main function
         LOGGER.critical("Unable to parse mapping file", exc_info=True)
         print(f"Unable to parse mapping file: {error}", file=sys.stderr)  # noqa: T201
-        sys.exit(1)
+        sys.exit(4)
 
     if action == "get":
         try:
             get_password(request, mapping)
         except Exception as error:  # ok'ish for the main function
             print(f"Unable to retrieve entry: {error}", file=sys.stderr)  # noqa: T201
-            sys.exit(1)
+            sys.exit(3)  # 1: uncaught exceptions, 2: already used by argparse
     else:
         LOGGER.info("Action %s is currently not supported", action)
-        sys.exit(1)
+        sys.exit(5)
 
 
 if __name__ == "__main__":

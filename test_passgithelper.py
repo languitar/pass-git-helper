@@ -52,7 +52,7 @@ def test_handle_skip_nothing(monkeypatch: Any) -> None:
 
 def test_handle_skip_exits(monkeypatch: Any) -> None:
     monkeypatch.setenv("PASS_GIT_HELPER_SKIP", "1")
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit, match=r"^6$"):
         passgithelper.handle_skip()
 
 
@@ -251,14 +251,14 @@ def test_parse_mapping_from_xdg() -> None:
 
 class TestScript:
     def test_help(self, capsys: Any) -> None:
-        with pytest.raises(SystemExit):
+        with pytest.raises(SystemExit, match=r"^0$"):
             passgithelper.main(["--help"])
 
         assert "usage: " in capsys.readouterr().out
 
     def test_skip(self, monkeypatch: Any, capsys: Any) -> None:
         monkeypatch.setenv("PASS_GIT_HELPER_SKIP", "1")
-        with pytest.raises(SystemExit):
+        with pytest.raises(SystemExit, match=r"^6$"):
             passgithelper.main(["get"])
         out, err = capsys.readouterr()
         assert not out
@@ -301,7 +301,7 @@ path=/foo/bar.git""",
     )
     @pytest.mark.usefixtures("helper_config")
     def test_path_used_if_present_fails(self, capsys: Any) -> None:
-        with pytest.raises(SystemExit):
+        with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
 
         _, err = capsys.readouterr()
@@ -474,7 +474,7 @@ host=mytest.com""",
     )
     @pytest.mark.usefixtures("helper_config")
     def test_select_unknown_username_extractor(self, capsys: Any) -> None:
-        with pytest.raises(SystemExit):
+        with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
         _, err = capsys.readouterr()
         assert "username_extractor of type 'doesntexist' does not exist" in err
@@ -536,7 +536,7 @@ host=mytest.com""",
     )
     @pytest.mark.usefixtures("helper_config")
     def test_select_unknown_password_extractor(self, capsys: Any) -> None:
-        with pytest.raises(SystemExit):
+        with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
         _, err = capsys.readouterr()
         assert "password_extractor of type 'doesntexist' does not exist" in err
@@ -620,7 +620,7 @@ host=mytest.com""",
     )
     @pytest.mark.usefixtures("helper_config")
     def test_fails_gracefully_on_pass_errors(self, capsys: Any) -> None:
-        with pytest.raises(SystemExit):
+        with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
 
         _, err = capsys.readouterr()
@@ -641,7 +641,7 @@ host=unknown""",
     )
     @pytest.mark.usefixtures("helper_config")
     def test_fails_gracefully_on_missing_entries(self, capsys: Any) -> None:
-        with pytest.raises(SystemExit):
+        with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
 
         _, err = capsys.readouterr()
