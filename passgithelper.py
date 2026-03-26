@@ -121,7 +121,10 @@ def parse_request() -> dict[str, str]:
             continue
 
         parts = line.split("=", 1)
-        assert len(parts) == 2
+        if len(parts) != 2:
+            raise ValueError(
+                f"Missing '=' in request line, cannot be parsed as key/value pair: '{line}'"
+            )
         request[parts[0].strip()] = parts[1].strip()
 
     return request
@@ -494,8 +497,12 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     handle_skip()
 
     action = args.action
+    if action != "get":
+        LOGGER.info("Action '%s' is currently not supported", action)
+        sys.exit(5)
+
     request = parse_request()
-    LOGGER.debug("Received action %s with request:\n%s", action, request)
+    LOGGER.debug("Received action '%s' with request:\n%s", action, request)
 
     try:
         mapping = parse_mapping(args.mapping)
@@ -504,15 +511,14 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         print(f"Unable to parse mapping file: {error}", file=sys.stderr)  # noqa: T201
         sys.exit(4)
 
-    if action == "get":
-        try:
-            get_password(request, mapping)
-        except Exception as error:  # ok'ish for the main function
-            print(f"Unable to retrieve entry: {error}", file=sys.stderr)  # noqa: T201
-            sys.exit(3)  # 1: uncaught exceptions, 2: already used by argparse
-    else:
-        LOGGER.info("Action %s is currently not supported", action)
-        sys.exit(5)
+    try:
+        get_password(request, mapping)
+    except Exception as error:  # ok'ish for the main function
+        print(  # noqa: T201
+            f'Unable to retrieve entry: "{type(error).__name__}: {error}"',
+            file=sys.stderr,
+        )
+        sys.exit(3)  # 1: uncaught exceptions, 2: already used by argparse
 
 
 if __name__ == "__main__":
