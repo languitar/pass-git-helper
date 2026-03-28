@@ -318,20 +318,34 @@ class StaticUsernameExtractor(DataExtractor):
 
 
 _line_extractor_name = "specific_line"
-_username_extractors = {
-    _line_extractor_name: SpecificLineExtractor(1, 0, option_suffix="_username"),
-    "regex_search": RegexSearchExtractor(
-        r"^username: +(.*)$", option_suffix="_username"
-    ),
-    "entry_name": EntryNameExtractor(option_suffix="_username"),
-    "static": StaticUsernameExtractor(),
-}
-_password_extractors = {
-    _line_extractor_name: SpecificLineExtractor(0, 0, option_suffix="_password"),
-    "regex_search": RegexSearchExtractor(
-        r"^password: +(.*)$", option_suffix="_password"
-    ),
-}
+_username_extractors: dict[str, DataExtractor] = {}
+_password_extractors: dict[str, DataExtractor] = {}
+
+
+def initialize_extractors() -> None:
+    """Initialize global `_username_extractors` and `_password_extractors` dictionaries."""
+    _username_extractors.update(
+        {
+            _line_extractor_name: SpecificLineExtractor(
+                1, 0, option_suffix="_username"
+            ),
+            "regex_search": RegexSearchExtractor(
+                r"^username: +(.*)$", option_suffix="_username"
+            ),
+            "entry_name": EntryNameExtractor(option_suffix="_username"),
+            "static": StaticUsernameExtractor(),
+        }
+    )
+    _password_extractors.update(
+        {
+            _line_extractor_name: SpecificLineExtractor(
+                0, 0, option_suffix="_password"
+            ),
+            "regex_search": RegexSearchExtractor(
+                r"^password: +(.*)$", option_suffix="_password"
+            ),
+        }
+    )
 
 
 def find_mapping_section(
@@ -406,6 +420,86 @@ def compute_pass_environment(section: configparser.SectionProxy) -> Mapping[str,
     return environment
 
 
+def pass_get_entry(pass_target: str, environment: Mapping[str, str]) -> bytes:
+    """Use the ``pass show`` CLI command to obtain a password store entry.
+
+    Note: Pass will happily return a list of password store entries if
+    ``pass_target`` is a directory. In such a case, the first line of the
+    returned output would be interpreted as a password. This is detected by
+    calling ``pass show ...`` a second time with an added trailing path
+    separator (typically a slash (``/``)) which only succeeds when
+    the modified ``pass_target`` is a directory.
+
+    There is still one special case where there is a directory `<pass_target>`
+    and also a password store entry `<pass_target>.gpg`. For the typical case,
+    this function can differentiate between valid password store entries and
+    directories. For more details, check the comments in the actual code.
+
+    Args:
+        environment:
+            Dictionary containing the environment to use in calls to the
+            ``pass`` CLI command.
+        pass_target:
+            Path to the actual password store entry.
+
+    Returns:
+        The (decoded) password store entry.
+
+    Raises:
+        ValueError when ``pass_target`` ends with a trailing directory seperator
+        (e.g. ``/``).
+
+        TypeError when ``pass_target`` corresponds to a directory instead of
+        a password store entry.
+
+    """
+    LOGGER.debug("Requesting entry '%s' from pass", pass_target)
+    if os.sep == pass_target[-1]:
+        raise ValueError(
+            f"'{pass_target}' is not a valid pass-name (remove the trailing '{os.sep}'?)"
+        )
+
+    output = subprocess.check_output(["pass", "show", pass_target], env=environment)
+
+    # If ``pass_target`` corresponds to a directory instead of an actual
+    # password store entry, adding a directory separator to ``pass_target`` will
+    # result in the same output as without it. With a valid password store
+    # entry, this typically (see else: below) results in a
+    # subprocess.CalledProcessError.
+    try:
+        target_alt = str(Path(pass_target) / "_")[:-1]
+        output_alt = subprocess.check_output(
+            ["pass", "show", target_alt], env=environment
+        )
+    except subprocess.CalledProcessError:
+        # subprocess.CalledProcessError is the expected behaviour when
+        # ``pass_target`` is a valid password store entry
+        pass
+    else:
+        # The trailing slash did not cause an issue -> ``pass_target`` is either
+        # a directory or a .gpg file with the same base name as a directory (i.e.
+        # a `pass_target` directory and a `pass_target`.gpg file).
+        #
+        # To handle the latter, `pass_target` gets accepted as valid password
+        # store entry if there is a mismatch between `output` (the actual
+        # password store entry) and `output_alt` (the directory listing).
+        #
+        # Corner case(s):
+        #
+        # 1. The content of a valid password store entry is identical to the
+        #    directory listing. The output variables would match and
+        #    `pass_target` would falsely get rejected.
+        #
+        # So far, I could not come up with a solution for 1. However, it is
+        # highly unlikely to occur in real-life and can probably be ignored.
+        if output == output_alt:
+            raise TypeError(
+                f"'{pass_target}' is not a password store entry (looks like a directory)"
+            )
+
+    return output
+
+
 def get_password(
     request: Mapping[str, str], mapping: configparser.ConfigParser
 ) -> None:
@@ -452,15 +546,11 @@ def get_password(
 
     environment = compute_pass_environment(section)
 
-    LOGGER.debug('Requesting entry "%s" from pass', pass_target)
-    # silence the subprocess injection warnings as it is the user's
-    # responsibility to provide a safe mapping and execution environment
-    output = subprocess.check_output(
-        ["pass", "show", pass_target], env=environment
-    ).decode(section.get("encoding", "UTF-8"))
-    lines = output.splitlines()
-    LOGGER.debug("Password store entry lines:\n%s", "\n".join(lines))
+    output = pass_get_entry(pass_target, environment)
+    output_str = output.decode(section.get("encoding", "UTF-8"))
+    LOGGER.debug("Password store entry:\n%s", output_str)
 
+    lines = output_str.splitlines()
     password = password_extractor.get_value(pass_target, lines)
     username = username_extractor.get_value(pass_target, lines)
     if password:
@@ -492,6 +582,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         logging.basicConfig(level=logging.DEBUG)
 
     handle_skip()
+
+    initialize_extractors()
 
     action = args.action
     request = parse_request()
