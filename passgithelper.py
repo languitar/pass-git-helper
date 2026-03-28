@@ -321,20 +321,34 @@ class StaticUsernameExtractor(DataExtractor):
 
 
 _line_extractor_name = "specific_line"
-_username_extractors = {
-    _line_extractor_name: SpecificLineExtractor(1, 0, option_suffix="_username"),
-    "regex_search": RegexSearchExtractor(
-        r"^username: +(.*)$", option_suffix="_username"
-    ),
-    "entry_name": EntryNameExtractor(option_suffix="_username"),
-    "static": StaticUsernameExtractor(),
-}
-_password_extractors = {
-    _line_extractor_name: SpecificLineExtractor(0, 0, option_suffix="_password"),
-    "regex_search": RegexSearchExtractor(
-        r"^password: +(.*)$", option_suffix="_password"
-    ),
-}
+_username_extractors: dict[str, DataExtractor] = {}
+_password_extractors: dict[str, DataExtractor] = {}
+
+
+def initialize_extractors() -> None:
+    """Initialize global `_username_extractors` and `_password_extractors` dictionaries."""
+    _username_extractors.update(
+        {
+            _line_extractor_name: SpecificLineExtractor(
+                1, 0, option_suffix="_username"
+            ),
+            "regex_search": RegexSearchExtractor(
+                r"^username: +(.*)$", option_suffix="_username"
+            ),
+            "entry_name": EntryNameExtractor(option_suffix="_username"),
+            "static": StaticUsernameExtractor(),
+        }
+    )
+    _password_extractors.update(
+        {
+            _line_extractor_name: SpecificLineExtractor(
+                0, 0, option_suffix="_password"
+            ),
+            "regex_search": RegexSearchExtractor(
+                r"^password: +(.*)$", option_suffix="_password"
+            ),
+        }
+    )
 
 
 def find_mapping_section(
@@ -495,6 +509,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         logging.basicConfig(level=logging.DEBUG)
 
     handle_skip()
+
+    initialize_extractors()
 
     action = args.action
     if action != "get":
