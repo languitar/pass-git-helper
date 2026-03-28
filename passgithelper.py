@@ -320,21 +320,68 @@ class StaticUsernameExtractor(DataExtractor):
         return self._username
 
 
-_line_extractor_name = "specific_line"
-_username_extractors = {
-    _line_extractor_name: SpecificLineExtractor(1, 0, option_suffix="_username"),
-    "regex_search": RegexSearchExtractor(
-        r"^username: +(.*)$", option_suffix="_username"
-    ),
-    "entry_name": EntryNameExtractor(option_suffix="_username"),
-    "static": StaticUsernameExtractor(),
-}
-_password_extractors = {
-    _line_extractor_name: SpecificLineExtractor(0, 0, option_suffix="_password"),
-    "regex_search": RegexSearchExtractor(
-        r"^password: +(.*)$", option_suffix="_password"
-    ),
-}
+class ExtractorContainer:
+    """Contains predefined username and password extractors required by ``get_password()``."""
+
+    _line_extractor_name: str = "specific_line"
+    _password_extractors: dict[str, DataExtractor]
+    _username_extractors: dict[str, DataExtractor]
+
+    def __init__(self) -> None:
+        self._password_extractors = {
+            self._line_extractor_name: SpecificLineExtractor(
+                0, 0, option_suffix="_password"
+            ),
+            "regex_search": RegexSearchExtractor(
+                r"^password: +(.*)$", option_suffix="_password"
+            ),
+        }
+        self._username_extractors = {
+            self._line_extractor_name: SpecificLineExtractor(
+                1, 0, option_suffix="_username"
+            ),
+            "regex_search": RegexSearchExtractor(
+                r"^username: +(.*)$", option_suffix="_username"
+            ),
+            "entry_name": EntryNameExtractor(option_suffix="_username"),
+            "static": StaticUsernameExtractor(),
+        }
+
+    def password_extractor(self, name: str | None = None) -> DataExtractor | None:
+        """Provides access to the predefined password extractors.
+
+        Args:
+            name:
+                Name of the password extractor or None for the default password
+                extractor.
+
+        Returns:
+            Password extractor for the given ``name`` or None if a matching extractor
+            was not found.
+        """
+        return (
+            self._password_extractors.get(name)
+            if name is not None
+            else self._password_extractors[self._line_extractor_name]
+        )
+
+    def username_extractor(self, name: str | None = None) -> DataExtractor | None:
+        """Provides access to the predefined username extractors.
+
+        Args:
+            name:
+                Name of the username extractor or None for the default username
+                extractor.
+
+        Returns:
+            Username extractor for the given ``name`` or None if a matching extractor
+            was not found.
+        """
+        return (
+            self._username_extractors.get(name)
+            if name is not None
+            else self._username_extractors[self._line_extractor_name]
+        )
 
 
 def find_mapping_section(
@@ -410,7 +457,9 @@ def compute_pass_environment(section: configparser.SectionProxy) -> Mapping[str,
 
 
 def get_password(
-    request: Mapping[str, str], mapping: configparser.ConfigParser
+    request: Mapping[str, str],
+    mapping: configparser.ConfigParser,
+    extractors: ExtractorContainer,
 ) -> None:
     """Resolve the given credential request in the provided mapping definition.
 
@@ -421,6 +470,8 @@ def get_password(
             The credential request specified as a dict of key-value pairs.
         mapping:
             The mapping configuration as a ConfigParser instance.
+        extractors:
+            The predefined password and username extractors.
     """
     header = get_request_section_header(request)
     section = find_mapping_section(mapping, header)
@@ -428,12 +479,17 @@ def get_password(
 
     pass_target = define_pass_target(section, request)
 
-    password_extractor_name: str = section.get("password_extractor")  # type: ignore
-
-    if password_extractor_name:
-        password_extractor = _password_extractors.get(password_extractor_name)
-    else:
-        password_extractor = SpecificLineExtractor(0, 0, option_suffix="_password")
+    password_extractor_name = section.get("password_extractor")
+    if password_extractor_name == "":
+        LOGGER.warning(
+            "Mapping file contains empty 'password_extractor', please check!"
+        )
+        LOGGER.warning(
+            "Fallback to default password extractor: use first line of password file"
+        )
+    password_extractor = extractors.password_extractor(
+        password_extractor_name if password_extractor_name else None
+    )
 
     if password_extractor is None:
         raise ValueError(
@@ -442,10 +498,8 @@ def get_password(
     password_extractor.configure(section)
     LOGGER.debug('Password extractor: "%s"', type(password_extractor))
 
-    username_extractor_name: str = section.get(
-        "username_extractor", fallback=_line_extractor_name
-    )
-    username_extractor = _username_extractors.get(username_extractor_name)
+    username_extractor_name: str | None = section.get("username_extractor")
+    username_extractor = extractors.username_extractor(username_extractor_name)
     if username_extractor is None:
         raise ValueError(
             f"A username_extractor of type '{username_extractor_name}' does not exist"
@@ -512,7 +566,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         sys.exit(4)
 
     try:
-        get_password(request, mapping)
+        get_password(request, mapping, ExtractorContainer())
     except Exception as error:  # ok'ish for the main function
         print(  # noqa: T201
             f'Unable to retrieve entry: "{type(error).__name__}: {error}"',

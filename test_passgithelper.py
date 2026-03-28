@@ -676,6 +676,44 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
+                None,
+                "protocol=https\nhost=example.com",
+                b"secret\nmyuser\nmore text\n",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_empty_name_selects_default_password_extractor(
+        self,
+        mocker: MockerFixture,
+        capsys: pytest.CaptureFixture[str],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        host = "example.com"
+        config = configparser.ConfigParser()
+        config[host] = {
+            "target": "dev/mytest",
+            "password_extractor": "",
+        }
+        _ = mocker.patch("passgithelper.parse_mapping", return_value=config)
+
+        passgithelper.main(["-l", "get"])
+
+        out, err = capsys.readouterr()
+        assert out == "password=secret\nusername=myuser\n"
+        assert not err
+
+        assert (
+            "root",
+            logging.WARNING,
+            "Mapping file contains empty 'password_extractor', please check!",
+        ) in caplog.record_tuples
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
                 "test_data/regex-password-extraction",
                 """
 protocol=https
