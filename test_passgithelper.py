@@ -1,4 +1,5 @@
 import configparser
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from subprocess import CalledProcessError
@@ -54,6 +55,18 @@ def test_handle_skip_exits(monkeypatch: Any) -> None:
     monkeypatch.setenv("PASS_GIT_HELPER_SKIP", "1")
     with pytest.raises(SystemExit, match=r"^6$"):
         passgithelper.handle_skip()
+
+
+def test_mapping_option_with_non_existing_file(capsys: Any) -> None:
+    """Test handling of ``--mapping`` option with a non-existing file name."""
+    nonexisting_ini_file = "___this_file_d0es_not_exist___.notIn1"
+    err_expected = f"No such file or directory: '{nonexisting_ini_file}'"
+    with pytest.raises(SystemExit, match=r"^2$"):
+        passgithelper.main(["--mapping", nonexisting_ini_file])
+
+    out, err = capsys.readouterr()
+    assert not out
+    assert err_expected in err
 
 
 class TestPasswordStoreDirSelection:
@@ -227,7 +240,9 @@ username = override@example.com
 )
 @pytest.mark.usefixtures("helper_config")
 def test_parse_mapping_file_missing() -> None:
-    with pytest.raises(RuntimeError):
+    with pytest.raises(
+        RuntimeError, match=r"No mapping configured so far at any XDG config location."
+    ):
         passgithelper.parse_mapping(None)
 
 
@@ -254,7 +269,9 @@ class TestScript:
         with pytest.raises(SystemExit, match=r"^0$"):
             passgithelper.main(["--help"])
 
-        assert "usage: " in capsys.readouterr().out
+        out, err = capsys.readouterr()
+        assert "usage: " in out
+        assert not err
 
     def test_skip(self, monkeypatch: Any, capsys: Any) -> None:
         monkeypatch.setenv("PASS_GIT_HELPER_SKIP", "1")
@@ -282,8 +299,89 @@ host=mytest.com""",
     def test_smoke_resolve(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
-        out, _ = capsys.readouterr()
+        out, err = capsys.readouterr()
         assert out == "password=narf\n"
+        assert not err
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                xdg_dir=None,
+                request="host=ignored",
+                entry_data=None,
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_unsupported_action_option(self, caplog: Any) -> None:
+        """Check handling of unsupported ``action`` option."""
+        with pytest.raises(SystemExit, match=r"^5$"):
+            passgithelper.main(["store"])
+
+        assert caplog.record_tuples[-1] == (
+            "root",
+            logging.INFO,
+            "Action 'store' is currently not supported",
+        )
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                xdg_dir="test_data/smoke",
+                request="",
+                entry_data=None,
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_request_without_host(self, capsys: Any) -> None:
+        """Check handling of request without ``host``.
+
+        Note: The current handling is not optimal since the error message
+        indicates that the error occurs while retrieving a password store entry
+        instead of clearly stating that the received request is invalid.
+
+        """
+        with pytest.raises(SystemExit, match=r"^3$"):
+            passgithelper.main(["get"])
+
+        out, err = capsys.readouterr()
+        assert not out
+        assert "Unable to retrieve entry:" in err  # TODO: check if this can be changed
+        assert "Request lacks host entry" in err
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                xdg_dir="test_data/smoke",
+                request="request_line_without_equals_sign",
+                entry_data=None,
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_request_with_invalid_line(self, capsys: Any) -> None:
+        """Check handling of invalid request line (i.e. line which does not contain a ``=``).
+
+        Note: The current handling is not optimal since the ValueError exception
+        'escapes' the error handling in main(..).
+
+        """
+        with pytest.raises(
+            ValueError,
+            match=r"^Missing '=' in request line, cannot be parsed as key/value pair: '.*'$",
+        ):
+            passgithelper.main(["get"])
+
+        out, err = capsys.readouterr()
+        assert not out
+        assert not err
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -301,10 +399,12 @@ path=/foo/bar.git""",
     )
     @pytest.mark.usefixtures("helper_config")
     def test_path_used_if_present_fails(self, capsys: Any) -> None:
+        """Request contains `path` which does not have a corresponding section in mapping file."""
         with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
 
-        _, err = capsys.readouterr()
+        out, err = capsys.readouterr()
+        assert not out
         assert "No mapping section" in err
 
     @pytest.mark.parametrize(
@@ -326,8 +426,29 @@ path=subpath/bar.git""",
     def test_path_used_if_present(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
-        out, _ = capsys.readouterr()
+        out, err = capsys.readouterr()
         assert out == "password=narf\n"
+        assert not err
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                xdg_dir="test_data/with-invalid-mapping",
+                request="host=ignored",
+                entry_data=None,
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_invalid_mapping_file(self, capsys: Any) -> None:
+        with pytest.raises(SystemExit, match=r"^4$"):
+            passgithelper.main(["get"])
+
+        out, err = capsys.readouterr()
+        assert not out
+        assert "Unable to parse mapping file: File contains no section headers." in err
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -349,8 +470,9 @@ path=subpath/bar.git""",
     def test_wildcard_matching(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
-        out, _ = capsys.readouterr()
+        out, err = capsys.readouterr()
         assert out == "password=narf-wildcard\n"
+        assert not err
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -372,8 +494,9 @@ path=subpath/bar.git""",
     def test_wildcard_path_matching(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
-        out, _ = capsys.readouterr()
+        out, err = capsys.readouterr()
         assert out == "password=daniele-tentoni-path-wildcard\n"
+        assert not err
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -392,8 +515,9 @@ host=plainline.com""",
     def test_username_provided(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
-        out, _ = capsys.readouterr()
+        out, err = capsys.readouterr()
         assert out == "password=password\nusername=username\n"
+        assert not err
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -413,8 +537,9 @@ username=narf""",
     def test_username_skipped_if_provided(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
-        out, _ = capsys.readouterr()
+        out, err = capsys.readouterr()
         assert out == "password=password\n"
+        assert not err
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -435,8 +560,9 @@ host=mytest.com""",
         # this would fail for the default file from with-username
         passgithelper.main(["-m", "test_data/smoke/git-pass-mapping.ini", "get"])
 
-        out, _ = capsys.readouterr()
+        out, err = capsys.readouterr()
         assert out == "password=narf\n"
+        assert not err
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -456,8 +582,9 @@ host=mytest.com""",
     def test_prefix_skipping(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
-        out, _ = capsys.readouterr()
+        out, err = capsys.readouterr()
         assert out == "password=xyz\nusername=tester\n"
+        assert not err
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -476,7 +603,8 @@ host=mytest.com""",
     def test_select_unknown_username_extractor(self, capsys: Any) -> None:
         with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
-        _, err = capsys.readouterr()
+        out, err = capsys.readouterr()
+        assert not out
         assert "username_extractor of type 'doesntexist' does not exist" in err
 
     @pytest.mark.parametrize(
@@ -497,8 +625,9 @@ host=mytest.com""",
     def test_regex_username_selection(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
-        out, _ = capsys.readouterr()
+        out, err = capsys.readouterr()
         assert out == "password=xyz\nusername=tester\n"
+        assert not err
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -518,8 +647,9 @@ host=mytest.com""",
     def test_entry_name_is_user(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
-        out, _ = capsys.readouterr()
+        out, err = capsys.readouterr()
         assert out == "password=xyz\nusername=myuser\n"
+        assert not err
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -538,7 +668,8 @@ host=mytest.com""",
     def test_select_unknown_password_extractor(self, capsys: Any) -> None:
         with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
-        _, err = capsys.readouterr()
+        out, err = capsys.readouterr()
+        assert not out
         assert "password_extractor of type 'doesntexist' does not exist" in err
 
     @pytest.mark.parametrize(
@@ -559,8 +690,9 @@ host=mytest.com""",
     def test_regex_password_selection(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
-        out, _ = capsys.readouterr()
+        out, err = capsys.readouterr()
         assert out == "password=mygreattoken\nusername=tester\n"
+        assert not err
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -580,8 +712,9 @@ host=mytest.com""",
     def test_uses_configured_encoding(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
-        out, _ = capsys.readouterr()
+        out, err = capsys.readouterr()
         assert out == "password=täßt\n"
+        assert not err
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -601,8 +734,9 @@ host=mytest.com""",
     def test_uses_utf8_by_default(self, capsys: Any) -> None:
         passgithelper.main(["get"])
 
-        out, _ = capsys.readouterr()
+        out, err = capsys.readouterr()
         assert out == "password=täßt\n"
+        assert not err
 
     @pytest.mark.parametrize(
         "helper_config",
@@ -623,7 +757,8 @@ host=mytest.com""",
         with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
 
-        _, err = capsys.readouterr()
+        out, err = capsys.readouterr()
+        assert not out
         assert "Unable to retrieve" in err
 
     @pytest.mark.parametrize(
@@ -644,7 +779,8 @@ host=unknown""",
         with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
 
-        _, err = capsys.readouterr()
+        out, err = capsys.readouterr()
+        assert not out
         assert "Unable to retrieve" in err
 
     @pytest.mark.parametrize(
@@ -664,8 +800,9 @@ host=example.com""",
     ) -> None:
         passgithelper.main(["get"])
 
-        out, _ = capsys.readouterr()
+        out, err = capsys.readouterr()
         assert out == "password=test\n"
+        assert not err
         assert (
             helper_config.mock_calls[-1].kwargs["env"]["PASSWORD_STORE_DIR"]
             == "/some/dir"
