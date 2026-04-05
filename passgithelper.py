@@ -43,7 +43,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         description="Git credential helper using pass as the data source.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "-m",
         "--mapping",
         type=argparse.FileType("r"),
@@ -55,14 +55,25 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             config_file=DEFAULT_CONFIG_FILE
         ),
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "-l",
         "--logging",
         action="store_true",
         default=False,
         help="Print debug messages on stderr. Might include sensitive information",
     )
-    parser.add_argument(
+    _ = parser.add_argument(
+        "--skip-fs-checks",
+        action="store_true",
+        default=os.environ.get("PASS_GIT_HELPER_SKIP_FS_CHECKS") == "1",
+        help=(
+            "Skip file system level checks to ensure the presence of an actual"
+            " password store (.gpg) file before running `pass`. As an"
+            " alternative, setting the `PASS_GIT_HELPER_SKIP_FS_CHECKS` environment"
+            " variable to `1` achieves the same result."
+        ),
+    )
+    _ = parser.add_argument(
         "action",
         type=str,
         metavar="ACTION",
@@ -321,20 +332,34 @@ class StaticUsernameExtractor(DataExtractor):
 
 
 _line_extractor_name = "specific_line"
-_username_extractors = {
-    _line_extractor_name: SpecificLineExtractor(1, 0, option_suffix="_username"),
-    "regex_search": RegexSearchExtractor(
-        r"^username: +(.*)$", option_suffix="_username"
-    ),
-    "entry_name": EntryNameExtractor(option_suffix="_username"),
-    "static": StaticUsernameExtractor(),
-}
-_password_extractors = {
-    _line_extractor_name: SpecificLineExtractor(0, 0, option_suffix="_password"),
-    "regex_search": RegexSearchExtractor(
-        r"^password: +(.*)$", option_suffix="_password"
-    ),
-}
+_username_extractors: dict[str, DataExtractor] = {}
+_password_extractors: dict[str, DataExtractor] = {}
+
+
+def initialize_extractors() -> None:
+    """Initialize global `_username_extractors` and `_password_extractors` dictionaries."""
+    _username_extractors.update(
+        {
+            _line_extractor_name: SpecificLineExtractor(
+                1, 0, option_suffix="_username"
+            ),
+            "regex_search": RegexSearchExtractor(
+                r"^username: +(.*)$", option_suffix="_username"
+            ),
+            "entry_name": EntryNameExtractor(option_suffix="_username"),
+            "static": StaticUsernameExtractor(),
+        }
+    )
+    _password_extractors.update(
+        {
+            _line_extractor_name: SpecificLineExtractor(
+                0, 0, option_suffix="_password"
+            ),
+            "regex_search": RegexSearchExtractor(
+                r"^password: +(.*)$", option_suffix="_password"
+            ),
+        }
+    )
 
 
 def find_mapping_section(
@@ -381,36 +406,75 @@ def define_pass_target(
     return pass_target
 
 
-def compute_pass_environment(section: configparser.SectionProxy) -> Mapping[str, str]:
-    """Returns (extended) environment needed to start the ``pass`` subprocess.
+def compute_pass_environment(
+    section: configparser.SectionProxy,
+) -> tuple[dict[str, str], Path]:
+    """Returns the environment variables needed to start the ``pass`` subprocess.
 
-    A potential ``password_store_dir`` from ``section`` is used to update
-    ``PASSWORD_STORE_DIR`` of the returned environment.
+    The main task of this function is to determine the password store directory
+    to be used by ``pass``. It does this by:
 
-    As added benefit, the value of ``password_store_dir`` gets run through
-    ``pathlib.Path.expanduser(..)`` allowing for using a leading ``~`` in place
-    of the users ``HOME`` (or, on Windows, ``USERPROFILE``) directory.
+    1. using the value of ``password_store_dir`` in ``section`` (if defined and
+       non-empty),
+    2. using the value of the ``PASSWORD_STORE_DIR`` environment variable (if
+       defined and non-empty),
+    3. falling back to the default: ``~/password-store``.
+
+    In the next step, a leading ``~`` (tilde) in the resulting path gets
+    replaced by the users ``$HOME`` (on Windows: ``%USERPROFILE%``) directory.
+    See ``os.path.expanduser()`` for more details.
+
+    Finally, the result is used to add or update ``PASSWORD_STORE_DIR`` to/in a
+    copy of the current process environment.
 
     Args:
         section:
             Ini file section which applies to the current password target.
 
-    Returns: A dictionary comprising a copy of the current process environment
-        with potentially added/updated ``PASSWORD_STORE_DIR`` value.
+    Returns:
+        A tuple (env, dir) where ``env`` is a dictionary comprising a copy of
+        the current process environment wth updated/added ``PASSWORD_STORE_DIR``
+        value and ``dir`` is the value of ``PASSWORD_STORE_DIR`` as a ``Path``
+        instance (for the callers convenience).
 
     """
     environment = os.environ.copy()
-    password_store_dir = section.get("password_store_dir")
-    if password_store_dir:
-        # expand leading tilde
-        password_store_dir = str(Path(password_store_dir).expanduser())
-        LOGGER.debug('Setting PASSWORD_STORE_DIR to "%s"', password_store_dir)
-        environment["PASSWORD_STORE_DIR"] = password_store_dir
-    return environment
+    password_store_dir = Path(
+        section.get("password_store_dir")
+        or environment.get("PASSWORD_STORE_DIR")
+        or "~/.password-store"
+    ).expanduser()
+    LOGGER.debug('Setting PASSWORD_STORE_DIR to "%s"', password_store_dir)
+    environment["PASSWORD_STORE_DIR"] = str(password_store_dir)
+    return environment, password_store_dir
+
+
+def check_password_file(password_store_dir: Path, pass_target: str) -> None:
+    """Check that the password file exists and that it is a file (or symlink).
+
+    Args:
+        password_store_dir:
+            Directory which contains the password to be checked.
+        pass_target:
+            Path to the actual password file within ``password_store_dir``
+            (without ``.gpg`` extension).
+
+    Raises:
+        FileNotFoundError
+            when the password file does not exist.
+        TypeError
+            when the password file is not a file (e.g. if it is a directory).
+
+    """
+    pass_target_file = Path(password_store_dir / f"{pass_target}.gpg")
+    if not pass_target_file.exists():
+        raise FileNotFoundError(f"'{pass_target_file}' does not exist")
+    if not pass_target_file.is_file():
+        raise TypeError(f"'{pass_target_file}' is not a file")
 
 
 def get_password(
-    request: Mapping[str, str], mapping: configparser.ConfigParser
+    request: Mapping[str, str], mapping: configparser.ConfigParser, skip_fs_checks: bool
 ) -> None:
     """Resolve the given credential request in the provided mapping definition.
 
@@ -421,6 +485,10 @@ def get_password(
             The credential request specified as a dict of key-value pairs.
         mapping:
             The mapping configuration as a ConfigParser instance.
+        skip_fs_checks:
+            Skip file system level checks for the presence of password store
+            (.gpg) files.
+
     """
     header = get_request_section_header(request)
     section = find_mapping_section(mapping, header)
@@ -453,7 +521,11 @@ def get_password(
     username_extractor.configure(section)
     LOGGER.debug('Username extractor: "%s"', type(username_extractor))
 
-    environment = compute_pass_environment(section)
+    environment, password_store_dir = compute_pass_environment(section)
+    if skip_fs_checks:
+        LOGGER.debug("File system level checks for password store files are disabled")
+    else:
+        check_password_file(password_store_dir, pass_target)
 
     LOGGER.debug('Requesting entry "%s" from pass', pass_target)
     # silence the subprocess injection warnings as it is the user's
@@ -496,6 +568,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
     handle_skip()
 
+    initialize_extractors()
+
     action = args.action
     if action != "get":
         LOGGER.info("Action '%s' is currently not supported", action)
@@ -512,7 +586,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         sys.exit(4)
 
     try:
-        get_password(request, mapping)
+        get_password(request, mapping, args.skip_fs_checks)
     except Exception as error:  # ok'ish for the main function
         print(  # noqa: T201
             f'Unable to retrieve entry: "{type(error).__name__}: {error}"',
