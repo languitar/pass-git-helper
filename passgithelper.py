@@ -63,6 +63,18 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Print debug messages on stderr. Might include sensitive information",
     )
     parser.add_argument(
+        "--skip-fs-checks",
+        action="store_true",
+        default=os.environ.get("PASS_GIT_HELPER_SKIP_FS_CHECKS", "") not in ("0", ""),
+        help=(
+            "Skip filesystem level checks to ensure the presence of an actual"
+            " password store (.gpg) file before running `pass`. As an"
+            " alternative, setting the `PASS_GIT_HELPER_SKIP_FS_CHECKS` environment"
+            " variable to a non-empty value different from `0` achieves the same"
+            " result."
+        ),
+    )
+    parser.add_argument(
         "action",
         type=str,
         metavar="ACTION",
@@ -504,6 +516,7 @@ def get_password(
     request: Mapping[str, str],
     mapping: configparser.ConfigParser,
     extractors: ExtractorContainer,
+    skip_fs_checks: bool,
 ) -> None:
     """Resolve the given credential request in the provided mapping definition.
 
@@ -516,6 +529,9 @@ def get_password(
             The mapping configuration as a ConfigParser instance.
         extractors:
             The predefined password and username extractors.
+        skip_fs_checks:
+            Skip filesystem level checks for the presence of password store
+            (.gpg) files.
     """
     header = get_request_section_header(request)
     section = find_mapping_section(mapping, header)
@@ -552,7 +568,10 @@ def get_password(
     LOGGER.debug('Username extractor: "%s"', type(username_extractor))
 
     environment, password_store_dir = compute_pass_environment(section)
-    ensure_password_is_file(password_store_dir, pass_target)
+    if skip_fs_checks:
+        LOGGER.debug("Filesystem level checks for password store files are disabled")
+    else:
+        ensure_password_is_file(password_store_dir, pass_target)
 
     LOGGER.debug('Requesting entry "%s" from pass', pass_target)
     # silence the subprocess injection warnings as it is the user's
@@ -611,7 +630,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         sys.exit(4)
 
     try:
-        get_password(request, mapping, ExtractorContainer())
+        get_password(request, mapping, ExtractorContainer(), args.skip_fs_checks)
     except Exception as error:  # ok'ish for the main function
         print(  # noqa: T201
             f'Unable to retrieve entry: "{type(error).__name__}: {error}"',
