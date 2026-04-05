@@ -234,6 +234,39 @@ def test_handle_skip_exits(monkeypatch: pytest.MonkeyPatch) -> None:
         passgithelper.handle_skip()
 
 
+@pytest.mark.parametrize(
+    argnames=("argv", "env", "expected"),
+    argvalues=[
+        (["get"], {}, False),
+        (["--skip-fs-checks", "get"], {}, True),
+        (["get", "--skip-fs-checks"], {}, True),
+        (["get"], {"PASS_GIT_HELPER_SKIP_FS_CHECKS": "1"}, True),
+        (["get"], {"PASS_GIT_HELPER_SKIP_FS_CHECKS": "11"}, False),
+        (["get"], {"PASS_GIT_HELPER_SKIP_FS_CHECKS": ""}, False),
+        (["get"], {"PASS_GIT_HELPER_SKIP_FS_CHECKS": "0"}, False),
+        (["--skip-fs-checks", "get"], {"PASS_GIT_HELPER_SKIP_FS_CHECKS": "0"}, True),
+    ],
+)
+def test_skip_fs_checks_in_function_parse_args(
+    monkeypatch: pytest.MonkeyPatch,
+    argv: list[str],
+    env: dict[str, str],
+    expected: bool,
+) -> None:
+    """Check handling of ``--skip-fs-checks`` in ``parse_arguments(..)``.
+
+    Runs ``passgithelper.parse_arguments`` with different combinations of the
+    ``--skip-fs-checks`` CLI option and the ``PASS_GIT_HELPER_SKIP_FS_CHECKS``
+    environment variable.
+
+    """
+    for k, v in env.items():
+        monkeypatch.setenv(name=k, value=v)
+
+    opt = passgithelper.parse_arguments(argv=argv)
+    assert opt.skip_fs_checks == expected
+
+
 def test_mapping_option_with_non_existing_file(capsys: CapsysType) -> None:
     """Test handling of ``--mapping`` option with a non-existing file name."""
     nonexisting_ini_file = "___this_file_d0es_not_exist___.notIn1"
@@ -1264,3 +1297,83 @@ class TestScriptCheckPasswordFile:
             else nullcontext()
         ):
             passgithelper.main(["get"])
+
+    @pytest.mark.parametrize(
+        argnames="helper_config",
+        argvalues=[
+            HelperConfig(
+                entry_name="git/example.com",
+                entry_data=b"secret\nusername: user1\n",
+                request="\nprotocol=https\nhost=example.com\n",
+                patch_check_password_file=False,
+                mock_co_expect_call=False,
+                err_expected="/git/example.com.gpg' does not exist",
+            ),
+            HelperConfig(
+                entry_name="git/example.com",
+                entry_data="git/example.com\n├── user1\n└── user2\n".encode(),
+                request="\nprotocol=https\nhost=example.com\n",
+                patch_check_password_file=False,
+                mock_co_expect_call=True,
+                out_expected="password=git/example.com",
+            ),
+        ],
+        indirect=True,
+    )
+    def test_option_skip_fs_checks(
+        self,
+        mocker: MockerFixture,
+        capsys: CapsysType,
+        caplog: CaplogType,
+        helper_config: HelperConfigAndMock,
+    ) -> None:
+        """Check if skipping the check_password_file(..) function works.
+
+        The test runs the script twice with the same data: a password store
+        entry which is actually a directory.
+
+        The first run checks the default case (without ``--skip-fs-checks``) and
+        is expected to report the missing password store entry.
+
+        The second run uses the same entry with ``--skip-fs-checks``. This time
+        the fact that there actually is no matching password store entry is not
+        detected and the script falsely uses the directory listing as password
+        store entry data. Also, the log contains a message, indicating that file
+        system level checks got disabled.
+
+        """
+        test_params = helper_config.test_params
+
+        password_store_dir = str(Path.cwd() / "test_data/dummy-password-store")
+        setup_helper_parse_request_mock(
+            mocker,
+            test_params,
+            use_wildcard_section=True,
+            username_extractor="regex_search",
+            # make sure that check_password_file uses
+            # `test_data/dummy-password-store`
+            password_store_dir=password_store_dir,
+        )
+
+        argv: list[str] = ["--logging"]
+        caplog_record: tuple[str, int, str] | None = None
+        if not test_params.err_expected:
+            argv.append("--skip-fs-checks")
+            caplog_record = (
+                "root",
+                logging.DEBUG,
+                "File system level checks for password store files are disabled",
+            )
+
+        argv.append("get")
+        with (
+            pytest.raises(SystemExit, match=r"^3$")
+            if test_params.err_expected
+            else nullcontext()
+        ):
+            passgithelper.main(argv=argv)
+
+        if caplog_record is not None:
+            assert caplog_record in caplog.record_tuples
+
+        teardown_helper_capsys_checks(capsys, test_params)

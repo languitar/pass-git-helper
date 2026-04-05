@@ -342,6 +342,13 @@ This might be useful to understand how the mapping is applied.
 
 `-m MAPPING_FILE` can be specified to use an alternative mapping file location.
 
+`--skip-fs-checks` disables any file system level checks which are, by default, run to ensure the presence of a password store (`.gpg`) file before running `pass`. This may be used when `pass` is just a wrapper for a different password management tool which e.g. does not store password entries in `.gpg` files.
+
+## Environment Variables
+
+* `PASS_GIT_HELPER_SKIP`: See section [Skipping Processing](#skipping-processing).
+* `PASS_GIT_HELPER_SKIP_FS_CHECKS`: When set to `1`, file system level checks for password store files are disabled (any other value will be ignored). See `--skip-fs-checks` in section [Command Line Options](#command-line-options) for more details.
+
 ## Skipping Processing
 
 In some automated contexts it might be necessary to prevent GPG from asking for the passphrase (via the agent).

@@ -43,7 +43,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         description="Git credential helper using pass as the data source.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "-m",
         "--mapping",
         type=argparse.FileType("r"),
@@ -55,14 +55,25 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             config_file=DEFAULT_CONFIG_FILE
         ),
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "-l",
         "--logging",
         action="store_true",
         default=False,
         help="Print debug messages on stderr. Might include sensitive information",
     )
-    parser.add_argument(
+    _ = parser.add_argument(
+        "--skip-fs-checks",
+        action="store_true",
+        default=os.environ.get("PASS_GIT_HELPER_SKIP_FS_CHECKS") == "1",
+        help=(
+            "Skip file system level checks to ensure the presence of an actual"
+            " password store (.gpg) file before running `pass`. As an"
+            " alternative, setting the `PASS_GIT_HELPER_SKIP_FS_CHECKS` environment"
+            " variable to `1` achieves the same result."
+        ),
+    )
+    _ = parser.add_argument(
         "action",
         type=str,
         metavar="ACTION",
@@ -463,7 +474,7 @@ def check_password_file(password_store_dir: Path, pass_target: str) -> None:
 
 
 def get_password(
-    request: Mapping[str, str], mapping: configparser.ConfigParser
+    request: Mapping[str, str], mapping: configparser.ConfigParser, skip_fs_checks: bool
 ) -> None:
     """Resolve the given credential request in the provided mapping definition.
 
@@ -474,6 +485,10 @@ def get_password(
             The credential request specified as a dict of key-value pairs.
         mapping:
             The mapping configuration as a ConfigParser instance.
+        skip_fs_checks:
+            Skip file system level checks for the presence of password store
+            (.gpg) files.
+
     """
     header = get_request_section_header(request)
     section = find_mapping_section(mapping, header)
@@ -507,7 +522,10 @@ def get_password(
     LOGGER.debug('Username extractor: "%s"', type(username_extractor))
 
     environment, password_store_dir = compute_pass_environment(section)
-    check_password_file(password_store_dir, pass_target)
+    if skip_fs_checks:
+        LOGGER.debug("File system level checks for password store files are disabled")
+    else:
+        check_password_file(password_store_dir, pass_target)
 
     LOGGER.debug('Requesting entry "%s" from pass', pass_target)
     # silence the subprocess injection warnings as it is the user's
@@ -568,7 +586,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         sys.exit(4)
 
     try:
-        get_password(request, mapping)
+        get_password(request, mapping, args.skip_fs_checks)
     except Exception as error:  # ok'ish for the main function
         print(  # noqa: T201
             f'Unable to retrieve entry: "{type(error).__name__}: {error}"',
