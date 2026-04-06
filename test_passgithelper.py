@@ -1,63 +1,71 @@
 import configparser
 import logging
+from collections.abc import Generator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from subprocess import CalledProcessError
-from typing import Any, Iterable, Optional, Sequence, Text
+from typing import Text, TypeAlias, cast
 from unittest.mock import ANY
 
 import pytest
-from pytest_mock import MockerFixture
+from pytest_mock import MockerFixture, MockType
 
 import passgithelper
+
+CapsysType: TypeAlias = pytest.CaptureFixture[str]
+CaplogType: TypeAlias = pytest.LogCaptureFixture
 
 
 @dataclass
 class HelperConfig:
-    xdg_dir: Optional[str]
+    xdg_dir: str | None
     request: str
-    entry_data: Optional[bytes]
-    entry_name: Optional[str] = None
+    entry_data: bytes | None
+    entry_name: str | None = None
 
 
 @pytest.fixture
-def helper_config(mocker: MockerFixture, request: Any) -> Iterable[Any]:
+def helper_config(
+    mocker: MockerFixture, request: pytest.FixtureRequest
+) -> Generator[MockType]:
+    test_params = cast("HelperConfig", request.param)
+
     xdg_mock = mocker.patch("xdg.BaseDirectory.load_first_config")
-    xdg_mock.return_value = request.param.xdg_dir
+    xdg_mock.return_value = test_params.xdg_dir
 
     mocker.patch(
         "sys.stdin.readlines",
-        return_value=request.param.request.splitlines(keepends=True),
+        return_value=test_params.request.splitlines(keepends=True),
     )
 
     subprocess_mock = mocker.patch("subprocess.check_output")
-    if request.param.entry_data:
-        subprocess_mock.return_value = request.param.entry_data
+    if test_params.entry_data:
+        subprocess_mock.return_value = test_params.entry_data
     else:
         subprocess_mock.side_effect = CalledProcessError(1, ["pass"], "pass failed")
 
     yield subprocess_mock
 
-    if request.param.entry_name is not None:
+    if test_params.entry_name is not None:
         subprocess_mock.assert_called_once()
         subprocess_mock.assert_called_with(
-            ["pass", "show", request.param.entry_name], env=ANY
+            ["pass", "show", test_params.entry_name], env=ANY
         )
 
 
-def test_handle_skip_nothing(monkeypatch: Any) -> None:
+def test_handle_skip_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PASS_GIT_HELPER_SKIP", raising=False)
     passgithelper.handle_skip()
     # should do nothing normally
 
 
-def test_handle_skip_exits(monkeypatch: Any) -> None:
+def test_handle_skip_exits(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PASS_GIT_HELPER_SKIP", "1")
     with pytest.raises(SystemExit, match=r"^6$"):
         passgithelper.handle_skip()
 
 
-def test_mapping_option_with_non_existing_file(capsys: Any) -> None:
+def test_mapping_option_with_non_existing_file(capsys: CapsysType) -> None:
     """Test handling of ``--mapping`` option with a non-existing file name."""
     nonexisting_ini_file = "___this_file_d0es_not_exist___.notIn1"
     err_expected = f"No such file or directory: '{nonexisting_ini_file}'"
@@ -78,7 +86,9 @@ class TestPasswordStoreDirSelection:
     ini file option overrides the environment variable.
     """
 
-    def test_ini_file_option_overrides_environment(self, monkeypatch: Any) -> None:
+    def test_ini_file_option_overrides_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         ini = configparser.ConfigParser()
 
         expected = "/tmp/password-store-from-ini"
@@ -100,7 +110,7 @@ class TestSkippingDataExtractor:
 
         def _get_raw(
             self, entry_text: Text, entry_lines: Sequence[Text]  # noqa: ARG002
-        ) -> Optional[Text]:
+        ) -> Text | None:
             return entry_lines[0]
 
     def test_smoke(self) -> None:
@@ -265,7 +275,7 @@ def test_parse_mapping_from_xdg() -> None:
 
 
 class TestScript:
-    def test_help(self, capsys: Any) -> None:
+    def test_help(self, capsys: CapsysType) -> None:
         with pytest.raises(SystemExit, match=r"^0$"):
             passgithelper.main(["--help"])
 
@@ -273,7 +283,7 @@ class TestScript:
         assert "usage: " in out
         assert not err
 
-    def test_skip(self, monkeypatch: Any, capsys: Any) -> None:
+    def test_skip(self, monkeypatch: pytest.MonkeyPatch, capsys: CapsysType) -> None:
         monkeypatch.setenv("PASS_GIT_HELPER_SKIP", "1")
         with pytest.raises(SystemExit, match=r"^6$"):
             passgithelper.main(["get"])
@@ -296,7 +306,7 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_smoke_resolve(self, capsys: Any) -> None:
+    def test_smoke_resolve(self, capsys: CapsysType) -> None:
         passgithelper.main(["get"])
 
         out, err = capsys.readouterr()
@@ -315,7 +325,7 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_unsupported_action_option(self, caplog: Any) -> None:
+    def test_unsupported_action_option(self, caplog: CaplogType) -> None:
         """Check handling of unsupported ``action`` option."""
         with pytest.raises(SystemExit, match=r"^5$"):
             passgithelper.main(["store"])
@@ -338,7 +348,7 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_request_without_host(self, capsys: Any) -> None:
+    def test_request_without_host(self, capsys: CapsysType) -> None:
         """Check handling of request without ``host``.
 
         Note: The current handling is not optimal since the error message
@@ -366,7 +376,7 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_request_with_invalid_line(self, capsys: Any) -> None:
+    def test_request_with_invalid_line(self, capsys: CapsysType) -> None:
         """Check handling of invalid request line (i.e. line which does not contain a ``=``).
 
         Note: The current handling is not optimal since the ValueError exception
@@ -398,7 +408,7 @@ path=/foo/bar.git""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_path_used_if_present_fails(self, capsys: Any) -> None:
+    def test_path_used_if_present_fails(self, capsys: CapsysType) -> None:
         """Request contains `path` which does not have a corresponding section in mapping file."""
         with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
@@ -423,7 +433,7 @@ path=subpath/bar.git""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_path_used_if_present(self, capsys: Any) -> None:
+    def test_path_used_if_present(self, capsys: CapsysType) -> None:
         passgithelper.main(["get"])
 
         out, err = capsys.readouterr()
@@ -442,7 +452,7 @@ path=subpath/bar.git""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_invalid_mapping_file(self, capsys: Any) -> None:
+    def test_invalid_mapping_file(self, capsys: CapsysType) -> None:
         with pytest.raises(SystemExit, match=r"^4$"):
             passgithelper.main(["get"])
 
@@ -467,7 +477,7 @@ path=subpath/bar.git""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_wildcard_matching(self, capsys: Any) -> None:
+    def test_wildcard_matching(self, capsys: CapsysType) -> None:
         passgithelper.main(["get"])
 
         out, err = capsys.readouterr()
@@ -491,7 +501,7 @@ path=subpath/bar.git""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_wildcard_path_matching(self, capsys: Any) -> None:
+    def test_wildcard_path_matching(self, capsys: CapsysType) -> None:
         passgithelper.main(["get"])
 
         out, err = capsys.readouterr()
@@ -512,7 +522,7 @@ host=plainline.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_username_provided(self, capsys: Any) -> None:
+    def test_username_provided(self, capsys: CapsysType) -> None:
         passgithelper.main(["get"])
 
         out, err = capsys.readouterr()
@@ -534,7 +544,7 @@ username=narf""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_username_skipped_if_provided(self, capsys: Any) -> None:
+    def test_username_skipped_if_provided(self, capsys: CapsysType) -> None:
         passgithelper.main(["get"])
 
         out, err = capsys.readouterr()
@@ -556,7 +566,7 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_custom_mapping_used(self, capsys: Any) -> None:
+    def test_custom_mapping_used(self, capsys: CapsysType) -> None:
         # this would fail for the default file from with-username
         passgithelper.main(["-m", "test_data/smoke/git-pass-mapping.ini", "get"])
 
@@ -579,7 +589,7 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_prefix_skipping(self, capsys: Any) -> None:
+    def test_prefix_skipping(self, capsys: CapsysType) -> None:
         passgithelper.main(["get"])
 
         out, err = capsys.readouterr()
@@ -600,7 +610,7 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_select_unknown_username_extractor(self, capsys: Any) -> None:
+    def test_select_unknown_username_extractor(self, capsys: CapsysType) -> None:
         with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
         out, err = capsys.readouterr()
@@ -622,7 +632,7 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_regex_username_selection(self, capsys: Any) -> None:
+    def test_regex_username_selection(self, capsys: CapsysType) -> None:
         passgithelper.main(["get"])
 
         out, err = capsys.readouterr()
@@ -644,7 +654,7 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_entry_name_is_user(self, capsys: Any) -> None:
+    def test_entry_name_is_user(self, capsys: CapsysType) -> None:
         passgithelper.main(["get"])
 
         out, err = capsys.readouterr()
@@ -665,7 +675,7 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_select_unknown_password_extractor(self, capsys: Any) -> None:
+    def test_select_unknown_password_extractor(self, capsys: CapsysType) -> None:
         with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
         out, err = capsys.readouterr()
@@ -725,7 +735,7 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_regex_password_selection(self, capsys: Any) -> None:
+    def test_regex_password_selection(self, capsys: CapsysType) -> None:
         passgithelper.main(["get"])
 
         out, err = capsys.readouterr()
@@ -747,7 +757,7 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_uses_configured_encoding(self, capsys: Any) -> None:
+    def test_uses_configured_encoding(self, capsys: CapsysType) -> None:
         passgithelper.main(["get"])
 
         out, err = capsys.readouterr()
@@ -769,7 +779,7 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_uses_utf8_by_default(self, capsys: Any) -> None:
+    def test_uses_utf8_by_default(self, capsys: CapsysType) -> None:
         passgithelper.main(["get"])
 
         out, err = capsys.readouterr()
@@ -791,7 +801,7 @@ host=mytest.com""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_fails_gracefully_on_pass_errors(self, capsys: Any) -> None:
+    def test_fails_gracefully_on_pass_errors(self, capsys: CapsysType) -> None:
         with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
 
@@ -813,7 +823,7 @@ host=unknown""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_fails_gracefully_on_missing_entries(self, capsys: Any) -> None:
+    def test_fails_gracefully_on_missing_entries(self, capsys: CapsysType) -> None:
         with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
 
@@ -834,7 +844,7 @@ host=example.com""",
         indirect=True,
     )
     def test_supports_switching_password_store_dirs(
-        self, capsys: Any, helper_config: Any
+        self, capsys: CapsysType, helper_config: HelperConfig
     ) -> None:
         passgithelper.main(["get"])
 
@@ -859,7 +869,7 @@ host=example.com""",
     )
     @pytest.mark.usefixtures("helper_config")
     def test_uses_password_store_dir_relative_to_home(
-        self, mocker: MockerFixture, helper_config: Any
+        self, mocker: MockerFixture, helper_config: HelperConfig
     ) -> None:
         host = "example.com"
         config = configparser.ConfigParser()
