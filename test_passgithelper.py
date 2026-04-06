@@ -18,22 +18,213 @@ CaplogType: TypeAlias = pytest.LogCaptureFixture
 
 @dataclass
 class HelperConfig:
-    xdg_dir: str | None
-    request: str
-    entry_data: bytes | None
+    """Used by the ``helper_config`` fixture to configure test setup and teardown.
+
+    Check the attributes documentation below for more details.
+
+    The ``helper_config`` fixture also makes the ``HelperConfig`` data available to the
+    test implementation by yielding it as part of the ``HelperConfigAndMock`` object
+    after test setup is done. To access it, tests must explicitly add ``helper_config``
+    to their function signature. Used in this way, it allows tests to adapt their
+    behavior to the provided parametrization data. It also allows tests to dynamically
+    configure the teardown part of the ``helper_function`` fixture from their
+    implementatoin (see ``mock_co_expect_call`` below).
+
+    Attributes:
+        xdg_dir:
+            Used by ``helper_config`` to configure the directory containing the
+            pass-git-helper ini/mapping file (default: None).
+        request:
+            Used by ``helper_config`` to simulate the request data provided by git via
+            ``stdin`` (default: "").
+        entry_data:
+            Used by ``helper_config`` to simulated the password store entry data
+            returned for ``entry_name`` by ``pass``. Also used to configure the
+            ``subprocess.check_output`` mock which simulates calling ``pass``. If
+            ``entry_data`` is provides, the setup done by ``helper_config`` mimics a
+            successful ``pass``word retrieval. With ``entry_data=None`` (the default) or
+            ``entry_data=b""``, ``helper_config`` mimics a missing password store entry.
+        entry_name:
+            Name of the password store entry (aka `pass_target`) to retrieve. It mainly
+            gets used in the teardown part of ``helper_config`` to check that it is
+            contained in the the command line options provided to ``pass`` (default:
+            None). It can also be used to adapt test implementation behaviour to a given
+            parametrization.
+        mock_co_expect_call:
+            With the default (``True``), ``helper_config`` will add ``assert_called_*``
+            checks for the ``subprocess.check_output`` mock during teardown. When set to
+            ``False``, these asserts will be skipped.
+        out_expected:
+            Document the expected output on ``stdout`` in the test parametrization. Will
+            automatically be checked when using the
+            ``teardown_helper_capsys_checks(..)`` function.
+        err_expected:
+            Same as ``out_expected``, but for ``stderr`` instead of ``stdout``.
+
+    """
+
+    xdg_dir: str | None = None
+    request: str = ""
+    entry_data: bytes | None = None
     entry_name: str | None = None
+    mock_co_expect_call: bool = True
+    out_expected: str = ""
+    err_expected: str = ""
+
+    def get_host(self) -> str | None:
+        """Get the host contained in ``request``."""
+        if not self.request:
+            return None
+        for line in self.request.splitlines():
+            param = line.split("=")
+            if len(param) > 1 and param[0] == "host":
+                return param[1]
+        return None
+
+    def get_pass_target(self, default: str | None = None) -> str | None:
+        """Get the ``entry_name`` (aka `pass_target`) with optional default."""
+        return self.entry_name if self.entry_name is not None else default
+
+
+@dataclass
+class HelperConfigAndMock:
+    """Generated value of the ``helper_config`` fixture.
+
+    Attributes:
+        test_params:
+            Test parametrization data.
+        mock_co:
+            Mock for ``subprocess.check_output`` as used in the
+            passgithelper.get_password(..) function.
+
+    """
+
+    test_params: HelperConfig
+    mock_co: MockType
+
+
+def setup_helper_parse_request_mock(
+    mocker: MockerFixture | None,
+    test_params: HelperConfig,
+    use_wildcard_section: bool = False,
+    **kwargs: str,
+) -> configparser.ConfigParser | None:
+    """Create simple mapping/config from ``test_params`` and use it to mock ``parse_mapping``.
+
+    The mapping gets created as follows:
+
+    1. The ``host`` request parameter gets used to create a section. If
+       ``use_wildcard_section`` is True, a ``*`` gets appended to ``host`` before adding
+       the section.
+
+    2. As a next step, if ``test_params.get_pass_target()`` returns a non-empty string,
+       it gets added as ``target`` to the ``host`` section.
+
+    3. Any ``kwargs`` also get added to the ``host`` section.
+
+    The resulting ini/mapping object is then used as return value of the
+    ``passgithelper.parse_mapping`` function using a mock object (this step is skipped
+    if ``mocker`` is ``None``).
+
+    Intended to be called from a test fixture or directly from a test.
+
+    Note: If you want a ``target`` in the ``host`` section of the created ConfigParser
+    object it should be added via ``test_params.entry_name``, not via ``kwargs``.
+    Otherwise automatic ``assert_called_*`` performed by the ``helper_config`` fixture
+    will fail or will need to be disabled.
+
+    Args:
+        mocker:
+            Used to patch the ``passgithelper.parse_mapping`` function. May be none to
+            skip the patching.
+        test_params:
+            Test parameters.
+        use_wildcard_section:
+            If True, the host section is created with a trailing ``*``.
+        kwargs:
+            Any ``kwargs`` are added to the ``host`` section of the created
+            ConfigParser object.
+
+    Returns:
+        The created ``ConfigParser`` object in case of success, ``None`` otherwise.
+
+    """
+    # git host to use as section in created config
+    host = test_params.get_host()
+    if not host:
+        return None
+    else:
+        host = f"{host}*" if use_wildcard_section else host
+
+    # create ini (mapping)
+    ini = configparser.ConfigParser()
+    ini.add_section(host)
+    section = ini[host]
+    if pass_target := test_params.get_pass_target():
+        section.update(target=pass_target)
+    section.update(kwargs)
+
+    if mocker is not None:
+        # mock parse_request
+        _ = mocker.patch("passgithelper.parse_mapping", return_value=ini)
+
+    return ini
+
+
+def teardown_helper_capsys_checks(
+    capsys: CapsysType,
+    test_params: HelperConfig,
+    out_use_equals: bool = False,
+    err_use_equals: bool = False,
+) -> None:
+    """Teardown helper which checks stdout/stderr dependening on ``test_params``.
+
+    Asserts that ``capsys.readouterr()`` matches
+    ``test_params..{out,err}_expected``.
+
+    Intended to be called from a test fixture or directly from a test.
+
+    Args:
+        capsys:
+            pytest capsys fixture used to access stout/sterr.
+        test_params:
+            ``HelperConfig`` object containing ``out_expected``/``err_expected``
+        out_use_equals:
+            By default, ``test_params.out_expected`` is checked using ``in``.
+            With ``out_use_equals=True`` the comparison is done using ``==``.
+        err_use_equals:
+            By default, ``test_params.err_expected`` is checked using ``in``.
+            With ``err_use_equals=True`` the comparison is done using ``==``.
+    """
+    out, err = capsys.readouterr()
+
+    if test_params.out_expected:
+        if out_use_equals:
+            assert out == test_params.out_expected
+        else:
+            assert test_params.out_expected in out
+    else:
+        assert not out
+
+    if test_params.err_expected:
+        if err_use_equals:
+            assert err == test_params.err_expected
+        else:
+            assert test_params.err_expected in err
+    else:
+        assert not err
 
 
 @pytest.fixture
 def helper_config(
     mocker: MockerFixture, request: pytest.FixtureRequest
-) -> Generator[MockType]:
+) -> Generator[HelperConfigAndMock]:
     test_params = cast("HelperConfig", request.param)
+    _ = mocker.patch(
+        "xdg.BaseDirectory.load_first_config", return_value=test_params.xdg_dir
+    )
 
-    xdg_mock = mocker.patch("xdg.BaseDirectory.load_first_config")
-    xdg_mock.return_value = test_params.xdg_dir
-
-    mocker.patch(
+    _ = mocker.patch(
         "sys.stdin.readlines",
         return_value=test_params.request.splitlines(keepends=True),
     )
@@ -42,15 +233,20 @@ def helper_config(
     if test_params.entry_data:
         subprocess_mock.return_value = test_params.entry_data
     else:
-        subprocess_mock.side_effect = CalledProcessError(1, ["pass"], "pass failed")
+        subprocess_mock.side_effect = CalledProcessError(
+            returncode=1,
+            cmd=["pass", "show", test_params.get_pass_target() or "unknown"],
+        )
 
-    yield subprocess_mock
+    yield HelperConfigAndMock(test_params, subprocess_mock)
 
-    if test_params.entry_name is not None:
+    if test_params.mock_co_expect_call:
         subprocess_mock.assert_called_once()
         subprocess_mock.assert_called_with(
             ["pass", "show", test_params.entry_name], env=ANY
         )
+    else:
+        subprocess_mock.assert_not_called()
 
 
 def test_handle_skip_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -241,9 +437,8 @@ username = override@example.com
     "helper_config",
     [
         HelperConfig(
-            None,
-            "",
-            b"ignored",
+            entry_data=b"ignored",
+            mock_co_expect_call=False,
         ),
     ],
     indirect=True,
@@ -253,16 +448,16 @@ def test_parse_mapping_file_missing() -> None:
     with pytest.raises(
         RuntimeError, match=r"No mapping configured so far at any XDG config location."
     ):
-        passgithelper.parse_mapping(None)
+        _ = passgithelper.parse_mapping(None)
 
 
 @pytest.mark.parametrize(
     "helper_config",
     [
         HelperConfig(
-            "test_data/smoke",
-            "",
-            b"ignored",
+            xdg_dir="test_data/smoke",
+            entry_data=b"ignored",
+            mock_co_expect_call=False,
         ),
     ],
     indirect=True,
@@ -295,12 +490,12 @@ class TestScript:
         "helper_config",
         [
             HelperConfig(
-                "test_data/smoke",
-                """
+                xdg_dir="test_data/smoke",
+                request="""
 protocol=https
 host=mytest.com""",
-                b"narf",
-                "dev/mytest",
+                entry_data=b"narf",
+                entry_name="dev/mytest",
             ),
         ],
         indirect=True,
@@ -317,9 +512,8 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
-                xdg_dir=None,
                 request="host=ignored",
-                entry_data=None,
+                mock_co_expect_call=False,
             ),
         ],
         indirect=True,
@@ -341,8 +535,7 @@ host=mytest.com""",
         [
             HelperConfig(
                 xdg_dir="test_data/smoke",
-                request="",
-                entry_data=None,
+                mock_co_expect_call=False,
             ),
         ],
         indirect=True,
@@ -370,7 +563,7 @@ host=mytest.com""",
             HelperConfig(
                 xdg_dir="test_data/smoke",
                 request="request_line_without_equals_sign",
-                entry_data=None,
+                mock_co_expect_call=False,
             ),
         ],
         indirect=True,
@@ -397,12 +590,13 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/smoke",
-                """
+                xdg_dir="test_data/smoke",
+                request="""
 protocol=https
 host=mytest.com
 path=/foo/bar.git""",
-                b"ignored",
+                entry_data=b"ignored",
+                mock_co_expect_call=False,
             ),
         ],
         indirect=True,
@@ -421,13 +615,13 @@ path=/foo/bar.git""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/with-path",
-                """
+                xdg_dir="test_data/with-path",
+                request="""
 protocol=https
 host=mytest.com
 path=subpath/bar.git""",
-                b"narf",
-                "dev/mytest",
+                entry_data=b"narf",
+                entry_name="dev/mytest",
             ),
         ],
         indirect=True,
@@ -446,32 +640,31 @@ path=subpath/bar.git""",
             HelperConfig(
                 xdg_dir="test_data/with-invalid-mapping",
                 request="host=ignored",
-                entry_data=None,
+                mock_co_expect_call=False,
+                err_expected="Unable to parse mapping file: File contains no section headers.",
             ),
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("helper_config")
-    def test_invalid_mapping_file(self, capsys: CapsysType) -> None:
+    def test_invalid_mapping_file(
+        self, capsys: CapsysType, helper_config: HelperConfigAndMock
+    ) -> None:
         with pytest.raises(SystemExit, match=r"^4$"):
             passgithelper.main(["get"])
-
-        out, err = capsys.readouterr()
-        assert not out
-        assert "Unable to parse mapping file: File contains no section headers." in err
+        teardown_helper_capsys_checks(capsys, helper_config.test_params)
 
     @pytest.mark.parametrize(
         "helper_config",
         [
             HelperConfig(
-                "test_data/wildcard",
-                """
+                xdg_dir="test_data/wildcard",
+                request="""
 protocol=https
 host=wildcard.com
 username=wildcard
 path=subpath/bar.git""",
-                b"narf-wildcard",
-                "dev/https/wildcard.com/wildcard",
+                entry_data=b"narf-wildcard",
+                entry_name="dev/https/wildcard.com/wildcard",
             ),
         ],
         indirect=True,
@@ -488,14 +681,14 @@ path=subpath/bar.git""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/wildcard_path",
-                """
+                xdg_dir="test_data/wildcard_path",
+                request="""
 protocol=https
 host=path_wildcard.com
 username=path_wildcard
 path=subpath/bar.git""",
-                b"daniele-tentoni-path-wildcard",
-                "dev/https/path_wildcard.com/path_wildcard/subpath/bar.git",
+                entry_data=b"daniele-tentoni-path-wildcard",
+                entry_name="dev/https/path_wildcard.com/path_wildcard/subpath/bar.git",
             ),
         ],
         indirect=True,
@@ -512,11 +705,11 @@ path=subpath/bar.git""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/with-username",
-                """
+                xdg_dir="test_data/with-username",
+                request="""
 host=plainline.com""",
-                b"password\nusername",
-                "dev/plainline",
+                entry_data=b"password\nusername",
+                entry_name="dev/plainline",
             ),
         ],
         indirect=True,
@@ -533,12 +726,12 @@ host=plainline.com""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/with-username",
-                """
+                xdg_dir="test_data/with-username",
+                request="""
 host=plainline.com
 username=narf""",
-                b"password\nusername",
-                "dev/plainline",
+                entry_data=b"password\nusername",
+                entry_name="dev/plainline",
             ),
         ],
         indirect=True,
@@ -555,12 +748,12 @@ username=narf""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/with-username",
-                """
+                xdg_dir="test_data/with-username",
+                request="""
 protocol=https
 host=mytest.com""",
-                b"narf",
-                "dev/mytest",
+                entry_data=b"narf",
+                entry_name="dev/mytest",
             ),
         ],
         indirect=True,
@@ -578,12 +771,12 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/with-username-skip",
-                """
+                xdg_dir="test_data/with-username-skip",
+                request="""
 protocol=https
 host=mytest.com""",
-                b"password: xyz\nuser: tester",
-                "dev/mytest",
+                entry_data=b"password: xyz\nuser: tester",
+                entry_name="dev/mytest",
             ),
         ],
         indirect=True,
@@ -600,11 +793,12 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/unknown-username-extractor",
-                """
+                xdg_dir="test_data/unknown-username-extractor",
+                request="""
 protocol=https
 host=mytest.com""",
-                b"ignored",
+                entry_data=b"ignored",
+                mock_co_expect_call=False,
             ),
         ],
         indirect=True,
@@ -621,12 +815,12 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/regex-username-extraction",
-                """
+                xdg_dir="test_data/regex-username-extraction",
+                request="""
 protocol=https
 host=mytest.com""",
-                b"xyz\nsomeline\nmyuser: tester\n morestuff\nmyuser: ignore",
-                "dev/mytest",
+                entry_data=b"xyz\nsomeline\nmyuser: tester\n morestuff\nmyuser: ignore",
+                entry_name="dev/mytest",
             ),
         ],
         indirect=True,
@@ -643,12 +837,12 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/entry-name-extraction",
-                """
+                xdg_dir="test_data/entry-name-extraction",
+                request="""
 protocol=https
 host=mytest.com""",
-                b"xyz",
-                "dev/mytest/myuser",
+                entry_data=b"xyz",
+                entry_name="dev/mytest/myuser",
             ),
         ],
         indirect=True,
@@ -665,11 +859,12 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/unknown-password-extractor",
-                """
+                xdg_dir="test_data/unknown-password-extractor",
+                request="""
 protocol=https
 host=mytest.com""",
-                b"ignored",
+                entry_data=b"ignored",
+                mock_co_expect_call=False,
             ),
         ],
         indirect=True,
@@ -686,33 +881,27 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
-                None,
-                "protocol=https\nhost=example.com",
-                b"secret\nmyuser\nmore text\n",
+                request="protocol=https\nhost=example.com",
+                entry_data=b"secret\nmyuser\nmore text\n",
+                entry_name="dev/mytest",
+                out_expected="password=secret\nusername=myuser\n",
             ),
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("helper_config")
     def test_empty_name_selects_default_password_extractor(
         self,
         mocker: MockerFixture,
-        capsys: pytest.CaptureFixture[str],
-        caplog: pytest.LogCaptureFixture,
+        capsys: CapsysType,
+        caplog: CaplogType,
+        helper_config: HelperConfigAndMock,
     ) -> None:
-        host = "example.com"
-        config = configparser.ConfigParser()
-        config[host] = {
-            "target": "dev/mytest",
-            "password_extractor": "",
-        }
-        _ = mocker.patch("passgithelper.parse_mapping", return_value=config)
+        test_params = helper_config.test_params
+        _ = setup_helper_parse_request_mock(mocker, test_params, password_extractor="")
 
         passgithelper.main(["-l", "get"])
 
-        out, err = capsys.readouterr()
-        assert out == "password=secret\nusername=myuser\n"
-        assert not err
+        teardown_helper_capsys_checks(capsys, test_params, out_use_equals=True)
 
         assert (
             "root",
@@ -724,12 +913,12 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/regex-password-extraction",
-                """
+                xdg_dir="test_data/regex-password-extraction",
+                request="""
 protocol=https
 host=mytest.com""",
-                b"xyz\nsomeline\nmyauth: mygreattoken\nmorestuff\nmyuser: tester\n",
-                "dev/mytest",
+                entry_data=b"xyz\nsomeline\nmyauth: mygreattoken\nmorestuff\nmyuser: tester\n",
+                entry_name="dev/mytest",
             ),
         ],
         indirect=True,
@@ -746,12 +935,12 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/with-encoding",
-                """
+                xdg_dir="test_data/with-encoding",
+                request="""
 protocol=https
 host=mytest.com""",
-                "täßt".encode("LATIN1"),
-                "dev/mytest",
+                entry_data="täßt".encode("LATIN1"),
+                entry_name="dev/mytest",
             ),
         ],
         indirect=True,
@@ -768,12 +957,12 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/smoke",
-                """
+                xdg_dir="test_data/smoke",
+                request="""
 protocol=https
 host=mytest.com""",
-                "täßt".encode("UTF-8"),
-                "dev/mytest",
+                entry_data="täßt".encode("UTF-8"),
+                entry_name="dev/mytest",
             ),
         ],
         indirect=True,
@@ -790,12 +979,11 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/smoke",
-                """
+                xdg_dir="test_data/smoke",
+                request="""
 protocol=https
 host=mytest.com""",
-                None,
-                "dev/mytest",
+                entry_name="dev/mytest",
             ),
         ],
         indirect=True,
@@ -813,11 +1001,12 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/smoke",
-                """
+                xdg_dir="test_data/smoke",
+                request="""
 protocol=https
 host=unknown""",
-                "ignored".encode("UTF-8"),
+                entry_data="ignored".encode("UTF-8"),
+                mock_co_expect_call=False,
             ),
         ],
         indirect=True,
@@ -835,16 +1024,17 @@ host=unknown""",
         "helper_config",
         [
             HelperConfig(
-                "test_data/password_store_dir",
-                """
+                xdg_dir="test_data/password_store_dir",
+                request="""
 host=example.com""",
-                "test".encode("UTF-8"),
+                entry_data="test".encode("UTF-8"),
+                entry_name="dev/mytest",
             ),
         ],
         indirect=True,
     )
     def test_supports_switching_password_store_dirs(
-        self, capsys: CapsysType, helper_config: HelperConfig
+        self, capsys: CapsysType, helper_config: HelperConfigAndMock
     ) -> None:
         passgithelper.main(["get"])
 
@@ -852,7 +1042,7 @@ host=example.com""",
         assert out == "password=test\n"
         assert not err
         assert (
-            helper_config.mock_calls[-1].kwargs["env"]["PASSWORD_STORE_DIR"]
+            helper_config.mock_co.call_args.kwargs["env"]["PASSWORD_STORE_DIR"]
             == "/some/dir"
         )
 
@@ -860,31 +1050,28 @@ host=example.com""",
         "helper_config",
         [
             HelperConfig(
-                xdg_dir=None,
                 request="protocol=https\nhost=example.com\n",
                 entry_data=b"ignored",
+                entry_name="dev/mytest",
             ),
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("helper_config")
     def test_uses_password_store_dir_relative_to_home(
-        self, mocker: MockerFixture, helper_config: HelperConfig
+        self, mocker: MockerFixture, helper_config: HelperConfigAndMock
     ) -> None:
-        host = "example.com"
-        config = configparser.ConfigParser()
-        config[host] = {
-            "password_store_dir": "~/some/dir",
-            "target": "dev/mytest",
-        }
-        mocker.patch("passgithelper.parse_mapping", return_value=config)
+        test_params = helper_config.test_params
+        pws_dir_expected = "~/some/dir"
+        _ = setup_helper_parse_request_mock(
+            mocker, test_params, password_store_dir=pws_dir_expected
+        )
 
         passgithelper.main(["get"])
 
-        mock_co = helper_config
+        mock_co = cast("MockType", helper_config.mock_co)
         assert "env" in mock_co.call_args.kwargs
-        env = mock_co.call_args.kwargs["env"]
+        env = cast("dict[str, str]", mock_co.call_args.kwargs["env"])
         assert "PASSWORD_STORE_DIR" in env
         password_store_dir = Path(env["PASSWORD_STORE_DIR"])
         assert password_store_dir.is_absolute()
-        assert password_store_dir == Path("~/some/dir").expanduser()
+        assert password_store_dir == Path(pws_dir_expected).expanduser()
