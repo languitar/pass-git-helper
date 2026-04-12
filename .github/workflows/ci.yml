@@ -61,6 +61,9 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+      - name: "Install 'The Standard Unix Password Manager: Pass'"
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get --yes install pass
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
