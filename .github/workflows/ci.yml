@@ -73,7 +73,7 @@ jobs:
           tox
           coverage xml --rcfile=setup.cfg
       - name: Publish coverage to codecov.io
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
