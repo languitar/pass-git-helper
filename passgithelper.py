@@ -23,6 +23,8 @@ __version__ = "4.3.0"
 
 LOGGER = logging.getLogger(__name__)
 CONFIG_FILE_NAME = "git-pass-mapping.ini"
+# C0 controls plus DEL, none of which belong in a password store entry name.
+CONTROL_CHARACTERS = dict.fromkeys([*range(32), 127])
 DEFAULT_CONFIG_FILE = (
     Path(xdg.BaseDirectory.save_config_path("pass-git-helper")) / CONFIG_FILE_NAME
 )
@@ -425,19 +427,107 @@ def get_request_section_header(request: Mapping[str, str]) -> str:
     return host
 
 
+def split_path_segments(value: str) -> list[str]:
+    r"""Split a value on both path separators.
+
+    ``\\`` is treated as a separator alongside ``/`` so that a Windows-style
+    path cannot slip a ``..`` past the checks below on a platform where the
+    filesystem would later honour it.
+    """
+    return re.split(r"[/\\]", value)
+
+
+def ensure_request_value_is_target_safe(
+    variable: str, value: str, allow_separators: bool
+) -> None:
+    """Ensure a request value is safe to substitute into a pass target.
+
+    The values substituted into the ``target`` of a mapping section come from
+    the credential request and are therefore influenced by the remote git talks
+    to. They name the password store entry that is about to be decrypted, so
+    they must not be able to change the shape of that name: a value carrying
+    path separators or ``..`` segments could otherwise address an entry the
+    mapping never intended, including one outside the password store.
+
+    Args:
+        variable:
+            Name of the variable being substituted, for error messages.
+        value:
+            The request value to check.
+        allow_separators:
+            Whether path separators are a legitimate part of this value. Only
+            true for ``${path}``.
+
+    Raises:
+        ValueError
+            when the value is empty or contains something that must not end up
+            in a pass target.
+    """
+    if not value:
+        # An empty value collapses the target onto a directory, and `pass show`
+        # prints a tree of entry names for a directory instead of failing.
+        raise ValueError(f"Request value for ${{{variable}}} is empty")
+    if value.translate(CONTROL_CHARACTERS) != value:
+        raise ValueError(
+            f"Request value for ${{{variable}}} contains a control character"
+        )
+    if not allow_separators and len(split_path_segments(value)) > 1:
+        raise ValueError(f"Request value for ${{{variable}}} contains a path separator")
+    if ".." in split_path_segments(value):
+        raise ValueError(
+            f"Request value for ${{{variable}}} contains a '..' path segment"
+        )
+
+
+def is_absolute_target(target: str) -> str | None:
+    """Return why a pass target is absolute, or ``None`` if it is relative.
+
+    An absolute target would escape the password store, and joining one onto the
+    store directory discards the store entirely. Both separators and a Windows
+    drive letter are considered, so that the check does not depend on the
+    platform the helper happens to run on.
+    """
+    if target.startswith(("/", "\\")):
+        return "starts with a path separator"
+    if re.match(r"^[A-Za-z]:", target):
+        return "starts with a drive letter"
+    return None
+
+
 def define_pass_target(
     section: configparser.SectionProxy, request: Mapping[str, str]
 ) -> str:
-    """Determine the pass target by filling in potentially used variables."""
-    pass_target = section["target"].replace("${host}", request["host"])
+    """Determine the pass target by filling in potentially used variables.
 
-    if "path" in request:
-        pass_target = pass_target.replace("${path}", request["path"])
-    if "username" in request:
-        pass_target = pass_target.replace("${username}", request["username"])
-    if "protocol" in request:
-        pass_target = pass_target.replace("${protocol}", request["protocol"])
-    return pass_target
+    Raises:
+        ValueError
+            when a request value that the target substitutes is unsafe to use
+            in a password store entry name, or when the resulting target would
+            point outside of the password store.
+    """
+    target = section["target"]
+
+    # Only validate what is actually substituted, so that a request value which
+    # is never used cannot make an otherwise fine lookup fail.
+    for variable, allow_separators in (
+        ("host", False),
+        ("path", True),
+        ("username", False),
+        ("protocol", False),
+    ):
+        placeholder = f"${{{variable}}}"
+        if placeholder not in target or variable not in request:
+            continue
+        ensure_request_value_is_target_safe(
+            variable, request[variable], allow_separators
+        )
+        target = target.replace(placeholder, request[variable])
+
+    absolute_reason = is_absolute_target(target)
+    if absolute_reason is not None:
+        raise ValueError(f"Pass target '{target}' {absolute_reason}")
+
+    return target
 
 
 def compute_pass_environment(
@@ -497,19 +587,27 @@ def ensure_password_is_file(password_store_dir: Path, pass_target: str) -> None:
             (without ``.gpg`` extension).
 
     Raises:
-        FileNotFoundError
-            when the password file does not exist.
         ValueError
-            when the password file is not a file (e.g. if it is a directory).
+            when the password file is outside of ``password_store_dir``, does
+            not exist, or is not a file (e.g. if it is a directory).
 
     """
     pass_target_file = Path(password_store_dir / f"{pass_target}.gpg")
-    if not pass_target_file.exists():
-        raise FileNotFoundError(f"'{pass_target_file}' does not exist")
+
+    # Confine the lookup to the password store. Note that joining an absolute
+    # pass_target would otherwise discard password_store_dir entirely.
+    store = password_store_dir.expanduser().resolve()
+    resolved = pass_target_file.expanduser().resolve()
+    if not resolved.is_relative_to(store):
+        raise ValueError(f"'{pass_target}' is outside of the password store")
+
+    # A single message for every remaining failure: distinguishing "does not
+    # exist" from "is not a file" would let a remote use this as an oracle for
+    # the existence of arbitrary files.
     # TODO: Add `follow_symlinks=True` to the is_file call after removing support for
     # python < 3.13.
-    if not pass_target_file.is_file():
-        raise ValueError(f"'{pass_target_file}' is not a file")
+    if not resolved.is_file():
+        raise ValueError(f"'{pass_target_file}' is not a usable password store entry")
 
 
 def get_password(

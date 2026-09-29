@@ -626,6 +626,151 @@ def test_parse_mapping_from_xdg() -> None:
     assert config["mytest.com"]["target"] == "dev/mytest"
 
 
+def _section(target: str) -> configparser.SectionProxy:
+    config = configparser.ConfigParser()
+    config.read_string(f"[test]\ntarget = {target}\n")
+    return config["test"]
+
+
+class TestDefinePassTarget:
+    def test_substitutes_all_variables(self) -> None:
+        section = _section("dev/${protocol}/${host}/${username}/${path}")
+        request = {
+            "protocol": "https",
+            "host": "example.com",
+            "username": "user1",
+            "path": "user1/repo.git",
+        }
+
+        assert (
+            passgithelper.define_pass_target(section, request)
+            == "dev/https/example.com/user1/user1/repo.git"
+        )
+
+    def test_keeps_placeholder_when_not_in_request(self) -> None:
+        section = _section("dev/${host}/${path}")
+
+        assert (
+            passgithelper.define_pass_target(section, {"host": "example.com"})
+            == "dev/example.com/${path}"
+        )
+
+    def test_ignores_unsafe_value_that_is_not_substituted(self) -> None:
+        """A value which the target never uses must not break the lookup."""
+        section = _section("dev/${host}")
+        request = {"host": "example.com", "username": "../../elsewhere"}
+
+        assert passgithelper.define_pass_target(section, request) == "dev/example.com"
+
+    @pytest.mark.parametrize(
+        ("variable", "value"),
+        [
+            # Traversal out of the password store.
+            ("username", "../../other"),
+            ("path", "../../other"),
+            ("path", "user1/../../other"),
+            # Collapses the target onto a directory, for which `pass show`
+            # prints a tree of entry names.
+            ("host", ""),
+            ("username", ""),
+            # Separators in values which must not contain any.
+            ("username", "a/b"),
+            ("host", "a/b"),
+            ("protocol", "a/b"),
+            # Windows-style separators must not slip a traversal past the
+            # checks on a platform where the filesystem would honour them.
+            ("username", "a\\b"),
+            ("path", "..\\..\\other"),
+            ("path", "user1\\..\\..\\other"),
+            # Control characters, none of which belong in an entry name.
+            ("username", "a\nb"),
+            ("username", "a\rb"),
+            ("username", "a\0b"),
+            ("username", "a\tb"),
+            ("username", "a\x1bb"),
+            ("username", "a\x7fb"),
+        ],
+    )
+    def test_rejects_unsafe_request_values(self, variable: str, value: str) -> None:
+        section = _section(f"dev/${{host}}/${{{variable}}}")
+        request = {"host": "example.com", variable: value}
+
+        with pytest.raises(ValueError, match=variable):
+            passgithelper.define_pass_target(section, request)
+
+    @pytest.mark.parametrize(
+        ("target", "request_username", "expected"),
+        [
+            # A leading dash is a legitimate entry name: "--" terminates pass'
+            # option list, so it cannot be mistaken for an option.
+            ("-weird-name", "user1", "-weird-name"),
+            ("${username}", "-c1", "-c1"),
+            ("dev/${username}", "-c1", "dev/-c1"),
+        ],
+    )
+    def test_allows_target_starting_with_dash(
+        self, target: str, request_username: str, expected: str
+    ) -> None:
+        section = _section(target)
+        request = {"host": "example.com", "username": request_username}
+
+        assert passgithelper.define_pass_target(section, request) == expected
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "/etc/shadow",
+            "\\\\etc\\\\shadow",
+            "C:/Windows/System32",
+            "c:\\\\Windows",
+        ],
+    )
+    def test_rejects_absolute_target(self, target: str) -> None:
+        section = _section(target)
+
+        with pytest.raises(ValueError, match=r"starts with a (path separator|drive)"):
+            passgithelper.define_pass_target(section, {"host": "example.com"})
+
+
+class TestEnsurePasswordIsFile:
+    @pytest.fixture
+    def store(self, tmp_path: Path) -> Path:
+        store = tmp_path / "store"
+        (store / "dev").mkdir(parents=True)
+        (store / "dev" / "entry.gpg").write_bytes(b"encrypted")
+        (tmp_path / "outside.gpg").write_bytes(b"encrypted")
+        return store
+
+    def test_accepts_entry_in_store(self, store: Path) -> None:
+        passgithelper.ensure_password_is_file(store, "dev/entry")
+
+    @pytest.mark.parametrize(
+        "pass_target",
+        [
+            # An absolute target would otherwise discard the store directory
+            # entirely when joined onto it.
+            "/etc/shadow",
+            "../outside",
+            "dev/../../outside",
+        ],
+    )
+    def test_rejects_target_outside_store(self, store: Path, pass_target: str) -> None:
+        with pytest.raises(ValueError, match="outside of the password store"):
+            passgithelper.ensure_password_is_file(store, pass_target)
+
+    @pytest.mark.parametrize("pass_target", ["dev/missing", "dev"])
+    def test_rejects_unusable_entry_uniformly(
+        self, store: Path, pass_target: str
+    ) -> None:
+        """Missing and non-file entries must be indistinguishable.
+
+        Separate messages would let a remote use this as an oracle for the
+        existence of arbitrary files.
+        """
+        with pytest.raises(ValueError, match="is not a usable password store entry"):
+            passgithelper.ensure_password_is_file(store, pass_target)
+
+
 class TestScript:
     def test_help(self, capsys: CapsysType) -> None:
         with pytest.raises(SystemExit, match=r"^0$"):
@@ -1268,6 +1413,9 @@ host=example.com""",
         assert password_store_dir == Path(pws_dir_expected).expanduser()
 
     # test parametrization
+    # Note: cases 3 to 5 deliberately share one error message. Distinguishing
+    # them would let a remote use the helper as an oracle for the existence of
+    # arbitrary files; what matters here is that each case is rejected.
     argvalues_ensure_password_is_file: ClassVar[list[HelperConfig]] = [
         # 1. pass_target pointing to valid (but unencrypted) password store file
         HelperConfig(
@@ -1292,7 +1440,7 @@ host=example.com""",
             request="\nprotocol=https\nhost=example.com\n",
             patch_ensure_password_is_file=False,
             mock_co_expect_call=False,
-            err_expected="/example.com/doesnotexist.gpg' does not exist",
+            err_expected="/example.com/doesnotexist.gpg' is not a usable password store entry",
         ),
         # 4. pass_target pointing to a directory
         HelperConfig(
@@ -1300,7 +1448,7 @@ host=example.com""",
             request="\nprotocol=https\nhost=example.com\n",
             patch_ensure_password_is_file=False,
             mock_co_expect_call=False,
-            err_expected="/git/example.com.gpg' does not exist",
+            err_expected="/git/example.com.gpg' is not a usable password store entry",
         ),
         # 5. pass_target pointing to a directory `<dir>` with another directory
         #    `<dir>.gpg`
@@ -1309,7 +1457,7 @@ host=example.com""",
             request="\nprotocol=https\nhost=github.com\n",
             patch_ensure_password_is_file=False,
             mock_co_expect_call=False,
-            err_expected="/git/github.com.gpg' is not a file",
+            err_expected="/git/github.com.gpg' is not a usable password store entry",
         ),
         # 6. pass_target pointing to password store file with identically named
         #    directory
@@ -1421,7 +1569,7 @@ host=example.com""",
                 request="\nprotocol=https\nhost=example.com\n",
                 patch_ensure_password_is_file=False,
                 mock_co_expect_call=False,
-                err_expected="/git/example.com.gpg' does not exist",
+                err_expected="/git/example.com.gpg' is not a usable password store entry",
             ),
             HelperConfig(
                 entry_name="git/example.com",
