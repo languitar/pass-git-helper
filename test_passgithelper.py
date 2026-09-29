@@ -626,6 +626,48 @@ def test_parse_mapping_from_xdg() -> None:
     assert config["mytest.com"]["target"] == "dev/mytest"
 
 
+class TestEnsureProtocolIsSecure:
+    @staticmethod
+    def _section(**options: str) -> configparser.SectionProxy:
+        config = configparser.ConfigParser()
+        config.read_string("[test]\ntarget = dev/mytest\n")
+        config["test"].update(options)
+        return config["test"]
+
+    def test_accepts_https(self) -> None:
+        passgithelper.ensure_protocol_is_secure(
+            self._section(), {"protocol": "https", "host": "example.com"}
+        )
+
+    @pytest.mark.parametrize("protocol", ["http", "git", "ftp", "HTTPS"])
+    def test_rejects_insecure_protocol(self, protocol: str) -> None:
+        with pytest.raises(ValueError, match="insecure protocol"):
+            passgithelper.ensure_protocol_is_secure(
+                self._section(), {"protocol": protocol, "host": "example.com"}
+            )
+
+    def test_rejects_missing_protocol(self) -> None:
+        """A request without a protocol must not be assumed to be https."""
+        with pytest.raises(ValueError, match="without a protocol"):
+            passgithelper.ensure_protocol_is_secure(
+                self._section(), {"host": "example.com"}
+            )
+
+    @pytest.mark.parametrize("protocol", ["http", "git"])
+    def test_allows_insecure_protocol_when_opted_in(self, protocol: str) -> None:
+        passgithelper.ensure_protocol_is_secure(
+            self._section(allow_insecure_protocol="true"),
+            {"protocol": protocol, "host": "example.com"},
+        )
+
+    def test_opt_out_does_not_apply_when_false(self) -> None:
+        with pytest.raises(ValueError, match="insecure protocol"):
+            passgithelper.ensure_protocol_is_secure(
+                self._section(allow_insecure_protocol="false"),
+                {"protocol": "http", "host": "example.com"},
+            )
+
+
 class TestEnsureTargetIsHostSpecific:
     @pytest.mark.parametrize(
         "section_name",
@@ -1084,6 +1126,68 @@ path=/foo/bar.git""",
     @pytest.mark.parametrize(
         "helper_config",
         [
+            # Plain http, which would put the password on the wire.
+            HelperConfig(
+                xdg_dir="test_data/insecure-protocol",
+                request="""
+protocol=http
+host=mytest.com""",
+                mock_co_expect_call=False,
+                err_expected="insecure protocol 'http'",
+            ),
+            # Another non-https protocol.
+            HelperConfig(
+                xdg_dir="test_data/insecure-protocol",
+                request="""
+protocol=git
+host=mytest.com""",
+                mock_co_expect_call=False,
+                err_expected="insecure protocol 'git'",
+            ),
+            # No protocol at all must not be assumed to be https.
+            HelperConfig(
+                xdg_dir="test_data/insecure-protocol",
+                request="""
+host=mytest.com""",
+                mock_co_expect_call=False,
+                err_expected="a request without a protocol",
+            ),
+        ],
+        indirect=True,
+    )
+    def test_refuses_insecure_protocol(
+        self, capsys: CapsysType, helper_config: HelperConfigAndMock
+    ) -> None:
+        """No credentials for non-https, and pass must not even be invoked."""
+        with pytest.raises(SystemExit, match=r"^3$"):
+            passgithelper.main(["get"])
+
+        teardown_helper_capsys_checks(capsys, helper_config.test_params)
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                xdg_dir="test_data/insecure-protocol",
+                request="""
+protocol=http
+host=insecure.com""",
+                entry_data=b"narf",
+                entry_name="dev/insecure",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_allows_insecure_protocol_when_opted_in(self, capsys: CapsysType) -> None:
+        passgithelper.main(["get"])
+
+        out, _ = capsys.readouterr()
+        assert out == "password=narf\n"
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
             HelperConfig(
                 xdg_dir="test_data/with-path",
                 request="""
@@ -1230,6 +1334,7 @@ path=subpath/bar.git""",
             HelperConfig(
                 xdg_dir="test_data/with-username",
                 request="""
+protocol=https
 host=plainline.com""",
                 entry_data=b"password\nusername",
                 entry_name="dev/plainline",
@@ -1251,6 +1356,7 @@ host=plainline.com""",
             HelperConfig(
                 xdg_dir="test_data/with-username",
                 request="""
+protocol=https
 host=plainline.com
 username=narf""",
                 entry_data=b"password\nusername",
@@ -1549,6 +1655,7 @@ host=unknown""",
             HelperConfig(
                 xdg_dir="test_data/password_store_dir",
                 request="""
+protocol=https
 host=example.com""",
                 entry_data="test".encode("UTF-8"),
                 entry_name="dev/mytest",

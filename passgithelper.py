@@ -480,6 +480,51 @@ def is_unbounded_host_pattern(host_pattern: str) -> bool:
     return not host_pattern.strip("*?.")
 
 
+def ensure_protocol_is_secure(
+    section: configparser.SectionProxy, request: Mapping[str, str]
+) -> None:
+    """Refuse to serve a request over a protocol that transmits in the clear.
+
+    git sends the credentials this helper returns over whatever protocol the
+    request names, so answering an ``http`` request means handing the password
+    to the network. A remote can reach this through a plain ``http`` clone URL
+    or a redirect, which is why it is refused rather than merely warned about.
+
+    Args:
+        section:
+            The matched mapping section, which may opt out via
+            ``allow_insecure_protocol``.
+        request:
+            The credential request.
+
+    Raises:
+        ValueError
+            when the protocol is not https and the section does not allow it.
+    """
+    protocol = request.get("protocol")
+    if protocol == "https":
+        return
+    if section.getboolean("allow_insecure_protocol", fallback=False):
+        LOGGER.warning(
+            "Serving credentials over insecure protocol '%s' as requested via "
+            "allow_insecure_protocol",
+            protocol,
+        )
+        return
+
+    described = (
+        f"insecure protocol '{protocol}'"
+        if protocol
+        else "a request without a protocol"
+    )
+    raise ValueError(
+        f"Refusing to provide credentials for {described}, which would risk "
+        "transmitting them in clear text without encryption. Set "
+        "allow_insecure_protocol=true for this mapping section if that is "
+        "really intended."
+    )
+
+
 def ensure_target_is_host_specific(section_name: str, target: str) -> None:
     """Reject a catch-all section whose target does not depend on the host.
 
@@ -802,6 +847,7 @@ def get_password(
     section = find_mapping_section(mapping, host, path)
     LOGGER.debug("Found mapping section:\n%s", dict(section))
 
+    ensure_protocol_is_secure(section, request)
     ensure_target_is_host_specific(section.name, section["target"])
 
     pass_target = define_pass_target(section, request)
