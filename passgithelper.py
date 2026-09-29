@@ -575,9 +575,11 @@ def get_password(
 
     LOGGER.debug('Requesting entry "%s" from pass', pass_target)
     # silence the subprocess injection warnings as it is the user's
-    # responsibility to provide a safe mapping and execution environment
+    # responsibility to provide a safe mapping and execution environment.
+    # "--" terminates pass' option list so that a target starting with a dash
+    # can never be interpreted as an option (e.g. "-c1" acting as --clip=1).
     output = subprocess.check_output(
-        ["pass", "show", pass_target], env=environment
+        ["pass", "show", "--", pass_target], env=environment
     ).decode(section.get("encoding", "UTF-8"))
     lines = output.splitlines()
     LOGGER.debug("Password store entry lines:\n%s", "\n".join(lines))

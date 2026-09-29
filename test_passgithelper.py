@@ -257,7 +257,7 @@ def helper_config(
     else:
         subprocess_mock.side_effect = CalledProcessError(
             returncode=1,
-            cmd=["pass", "show", test_params.get_pass_target() or "unknown"],
+            cmd=["pass", "show", "--", test_params.get_pass_target() or "unknown"],
         )
 
     yield HelperConfigAndMock(test_params, subprocess_mock)
@@ -265,7 +265,7 @@ def helper_config(
     if test_params.mock_co_expect_call:
         subprocess_mock.assert_called_once()
         subprocess_mock.assert_called_with(
-            ["pass", "show", test_params.entry_name], env=ANY
+            ["pass", "show", "--", test_params.entry_name], env=ANY
         )
     else:
         subprocess_mock.assert_not_called()
