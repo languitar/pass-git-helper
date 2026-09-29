@@ -21,8 +21,10 @@ import xdg.BaseDirectory
 
 __version__ = "4.3.0"
 
-LOGGER = logging.getLogger()
+LOGGER = logging.getLogger(__name__)
 CONFIG_FILE_NAME = "git-pass-mapping.ini"
+# C0 controls plus DEL, none of which belong in a password store entry name.
+CONTROL_CHARACTERS = dict.fromkeys([*range(32), 127])
 DEFAULT_CONFIG_FILE = (
     Path(xdg.BaseDirectory.save_config_path("pass-git-helper")) / CONFIG_FILE_NAME
 )
@@ -396,48 +398,348 @@ class ExtractorContainer:
         )
 
 
+def split_section_into_host_and_path(pattern: str) -> tuple[str, str]:
+    """Split a mapping section name into its host and path patterns.
+
+    Args:
+        pattern:
+            The section name from the mapping file.
+
+    Returns:
+        A tuple (host_pattern, path_pattern). ``path_pattern`` is empty if the
+        section does not restrict the path.
+    """
+    host_pattern, _, path_pattern = pattern.partition("/")
+    return host_pattern, path_pattern
+
+
+def match_host_pattern(host_pattern: str, host: str) -> bool:
+    """Match a host against the host part of a mapping section name.
+
+    Matching is per DNS label, i.e. per dot-separated component of the host
+    name: the pattern and the host are split on ``.`` and the components are
+    matched pairwise, so a pattern only ever matches a host with the same number
+    of labels. Wildcards are thereby confined to the label they appear in and a
+    pattern cannot extend into a neighbouring domain: ``github.com*`` matches
+    ``github.community`` but not ``github.com.evil.com``, which would otherwise
+    hand the credentials for one host to an entirely different one.
+
+    Within a single label, ordinary ``fnmatch`` syntax applies, character
+    classes included. A bare ``*`` is a catch-all matching any host regardless
+    of how many labels it has.
+
+    Args:
+        host_pattern:
+            The host part of a mapping section name.
+        host:
+            The host from the credential request.
+
+    Returns:
+        Whether the pattern matches the host.
+    """
+    # A host from git never contains a path separator, but no pattern must be
+    # able to match one if it ever did, the catch-all included.
+    if "/" in host:
+        return False
+
+    if host_pattern == "*":
+        return True
+
+    pattern_labels = host_pattern.split(".")
+    host_labels = host.split(".")
+    if len(pattern_labels) != len(host_labels):
+        return False
+
+    return all(
+        fnmatch.fnmatch(host_label, pattern_label)
+        for pattern_label, host_label in zip(pattern_labels, host_labels)
+    )
+
+
+def is_unbounded_host_pattern(host_pattern: str) -> bool:
+    """Whether a host pattern matches hosts the user never explicitly named.
+
+    Such a pattern matches hosts an attacker controls just as readily as the
+    user's own, so it must not resolve to a fixed password store entry.
+
+    The test is whether anything is left of the pattern once the wildcards and
+    the label separator are removed: what remains is the literal host content
+    the user actually committed to. ``.`` is removed along with the wildcards
+    because it only delimits labels and names no host by itself, so ``*.*``
+    names no host any more than ``*`` does. This deliberately is not a
+    comparison against ``*``: matching is per label, but ``*.*`` still matches
+    every two-label host.
+
+    Args:
+        host_pattern:
+            The host part of a mapping section name.
+
+    Returns:
+        Whether the pattern matches hosts indiscriminately.
+    """
+    return not host_pattern.strip("*?.")
+
+
+def ensure_protocol_is_secure(
+    section: configparser.SectionProxy, request: Mapping[str, str]
+) -> None:
+    """Refuse to serve a request over a protocol that transmits in the clear.
+
+    git sends the credentials this helper returns over whatever protocol the
+    request names, so answering an ``http`` request means handing the password
+    to the network. A remote can reach this through a plain ``http`` clone URL
+    or a redirect, which is why it is refused rather than merely warned about.
+
+    Args:
+        section:
+            The matched mapping section, which may opt out via
+            ``allow_insecure_protocol``.
+        request:
+            The credential request.
+
+    Raises:
+        ValueError
+            when the protocol is not https and the section does not allow it.
+    """
+    protocol = request.get("protocol")
+    if protocol == "https":
+        return
+    if section.getboolean("allow_insecure_protocol", fallback=False):
+        LOGGER.warning(
+            "Serving credentials over insecure protocol '%s' as requested via "
+            "allow_insecure_protocol",
+            protocol,
+        )
+        return
+
+    described = (
+        f"insecure protocol '{protocol}'"
+        if protocol
+        else "a request without a protocol"
+    )
+    raise ValueError(
+        f"Refusing to provide credentials for {described}, which would risk "
+        "transmitting them in clear text without encryption. Set "
+        "allow_insecure_protocol=true for this mapping section if that is "
+        "really intended."
+    )
+
+
+def ensure_target_is_host_specific(section_name: str, target: str) -> None:
+    """Reject a catch-all section whose target does not depend on the host.
+
+    A section matching any host, paired with a target that is the same for every
+    host, hands one fixed credential to whatever host a remote can steer git
+    towards. Requiring ``${host}`` in the target keeps such a section
+    self-limiting: an unknown host resolves to an entry that does not exist, so
+    nothing is decrypted and nothing is returned.
+
+    Args:
+        section_name:
+            Name of the matched mapping section.
+        target:
+            The raw ``target`` value of that section, before substitution, so
+            that a target which merely happens to contain the host's text does
+            not satisfy the requirement.
+
+    Raises:
+        ValueError
+            when the section matches any host but its target does not use
+            ``${host}``.
+    """
+    host_pattern, _ = split_section_into_host_and_path(section_name)
+    if is_unbounded_host_pattern(host_pattern) and "${host}" not in target:
+        raise ValueError(
+            f"Mapping section '{section_name}' matches any host, but its target "
+            f"'{target}' is the same for every host. That combination would hand "
+            "the credentials in that one entry to whatever host git is asked to "
+            "authenticate against, including a host an attacker controls, so it "
+            "is refused. Either add ${host} to the target, which makes the "
+            "section resolve to a different entry per host, or replace the "
+            "section with ones naming the hosts it should serve."
+        )
+
+
+def match_section_pattern(pattern: str, host: str, path: Optional[str]) -> bool:
+    """Match a credential request against a mapping section name.
+
+    Args:
+        pattern:
+            The section name from the mapping file.
+        host:
+            The host from the credential request.
+        path:
+            The path from the credential request, or ``None`` if the request
+            carries none (i.e. ``credential.useHttpPath`` is not enabled).
+
+    Returns:
+        Whether the section applies to the request.
+    """
+    host_pattern, path_pattern = split_section_into_host_and_path(pattern)
+
+    if not match_host_pattern(host_pattern, host):
+        return False
+
+    if not path_pattern:
+        # The section does not restrict the path, so it applies to every path
+        # on a matching host.
+        return True
+
+    if path is None:
+        LOGGER.debug(
+            'Section "%s" restricts the path, but the request carries none. '
+            "Enable credential.useHttpPath in git to match on paths.",
+            pattern,
+        )
+        return False
+
+    # Inside the path, a wildcard crossing "/" is intended.
+    return fnmatch.fnmatch(path, path_pattern)
+
+
 def find_mapping_section(
-    mapping: configparser.ConfigParser, request_header: str
+    mapping: configparser.ConfigParser, host: str, path: Optional[str]
 ) -> configparser.SectionProxy:
-    """Select the mapping entry matching the request header."""
-    LOGGER.debug('Searching mapping to match against header "%s"', request_header)
+    """Select the mapping entry matching the request host and path."""
+    LOGGER.debug('Searching mapping to match against host "%s", path "%s"', host, path)
     for section in mapping.sections():
-        if fnmatch.fnmatch(request_header, section):
+        if match_section_pattern(section, host, path):
             LOGGER.debug(
-                'Section "%s" matches requested header "%s"', section, request_header
+                'Section "%s" matches requested host "%s", path "%s"',
+                section,
+                host,
+                path,
             )
             return mapping[section]
 
     raise ValueError(
-        f"No mapping section in {mapping.sections()} matches request {request_header}"
+        f"No mapping section in {mapping.sections()} matches request "
+        f"{get_request_header(host, path)}"
     )
 
 
-def get_request_section_header(request: Mapping[str, str]) -> str:
-    """Return the canonical host + optional path for section header matching."""
+def get_request_host_and_path(
+    request: Mapping[str, str],
+) -> tuple[str, Optional[str]]:
+    """Return the host and optional path of a credential request.
+
+    Raises:
+        ValueError
+            when the request carries no host.
+    """
     if "host" not in request:
         LOGGER.error("host= entry missing in request. Cannot query without a host")
         raise ValueError("Request lacks host entry")
 
-    host = request["host"]
-    if "path" in request:
-        host = "/".join([host, request["path"]])
-    return host
+    return request["host"], request.get("path")
+
+
+def get_request_header(host: str, path: Optional[str]) -> str:
+    """Return a human readable "host/path" for log and error messages."""
+    return "/".join([host, path]) if path is not None else host
+
+
+def split_path_segments(value: str) -> list[str]:
+    r"""Split a value on both path separators.
+
+    ``\\`` is treated as a separator alongside ``/`` so that a Windows-style
+    path cannot slip a ``..`` past the checks below on a platform where the
+    filesystem would later honour it.
+    """
+    return re.split(r"[/\\]", value)
+
+
+def ensure_request_value_is_target_safe(
+    variable: str, value: str, allow_separators: bool
+) -> None:
+    """Ensure a request value is safe to substitute into a pass target.
+
+    The values substituted into the ``target`` of a mapping section come from
+    the credential request and are therefore influenced by the remote git talks
+    to. They name the password store entry that is about to be decrypted, so
+    they must not be able to change the shape of that name: a value carrying
+    path separators or ``..`` segments could otherwise address an entry the
+    mapping never intended, including one outside the password store.
+
+    Args:
+        variable:
+            Name of the variable being substituted, for error messages.
+        value:
+            The request value to check.
+        allow_separators:
+            Whether path separators are a legitimate part of this value. Only
+            true for ``${path}``.
+
+    Raises:
+        ValueError
+            when the value is empty or contains something that must not end up
+            in a pass target.
+    """
+    if not value:
+        # An empty value collapses the target onto a directory, and `pass show`
+        # prints a tree of entry names for a directory instead of failing.
+        raise ValueError(f"Request value for ${{{variable}}} is empty")
+    if value.translate(CONTROL_CHARACTERS) != value:
+        raise ValueError(
+            f"Request value for ${{{variable}}} contains a control character"
+        )
+    if not allow_separators and len(split_path_segments(value)) > 1:
+        raise ValueError(f"Request value for ${{{variable}}} contains a path separator")
+    if ".." in split_path_segments(value):
+        raise ValueError(
+            f"Request value for ${{{variable}}} contains a '..' path segment"
+        )
+
+
+def is_absolute_target(target: str) -> str | None:
+    """Return why a pass target is absolute, or ``None`` if it is relative.
+
+    An absolute target would escape the password store, and joining one onto the
+    store directory discards the store entirely. Both separators and a Windows
+    drive letter are considered, so that the check does not depend on the
+    platform the helper happens to run on.
+    """
+    if target.startswith(("/", "\\")):
+        return "starts with a path separator"
+    if re.match(r"^[A-Za-z]:", target):
+        return "starts with a drive letter"
+    return None
 
 
 def define_pass_target(
     section: configparser.SectionProxy, request: Mapping[str, str]
 ) -> str:
-    """Determine the pass target by filling in potentially used variables."""
-    pass_target = section["target"].replace("${host}", request["host"])
+    """Determine the pass target by filling in potentially used variables.
 
-    if "path" in request:
-        pass_target = pass_target.replace("${path}", request["path"])
-    if "username" in request:
-        pass_target = pass_target.replace("${username}", request["username"])
-    if "protocol" in request:
-        pass_target = pass_target.replace("${protocol}", request["protocol"])
-    return pass_target
+    Raises:
+        ValueError
+            when a request value that the target substitutes is unsafe to use
+            in a password store entry name, or when the resulting target would
+            point outside of the password store.
+    """
+    target = section["target"]
+
+    # Only validate what is actually substituted, so that a request value which
+    # is never used cannot make an otherwise fine lookup fail.
+    for variable, allow_separators in (
+        ("host", False),
+        ("path", True),
+        ("username", False),
+        ("protocol", False),
+    ):
+        placeholder = f"${{{variable}}}"
+        if placeholder not in target or variable not in request:
+            continue
+        ensure_request_value_is_target_safe(
+            variable, request[variable], allow_separators
+        )
+        target = target.replace(placeholder, request[variable])
+
+    absolute_reason = is_absolute_target(target)
+    if absolute_reason is not None:
+        raise ValueError(f"Pass target '{target}' {absolute_reason}")
+
+    return target
 
 
 def compute_pass_environment(
@@ -497,19 +799,27 @@ def ensure_password_is_file(password_store_dir: Path, pass_target: str) -> None:
             (without ``.gpg`` extension).
 
     Raises:
-        FileNotFoundError
-            when the password file does not exist.
         ValueError
-            when the password file is not a file (e.g. if it is a directory).
+            when the password file is outside of ``password_store_dir``, does
+            not exist, or is not a file (e.g. if it is a directory).
 
     """
     pass_target_file = Path(password_store_dir / f"{pass_target}.gpg")
-    if not pass_target_file.exists():
-        raise FileNotFoundError(f"'{pass_target_file}' does not exist")
+
+    # Confine the lookup to the password store. Note that joining an absolute
+    # pass_target would otherwise discard password_store_dir entirely.
+    store = password_store_dir.expanduser().resolve()
+    resolved = pass_target_file.expanduser().resolve()
+    if not resolved.is_relative_to(store):
+        raise ValueError(f"'{pass_target}' is outside of the password store")
+
+    # A single message for every remaining failure: distinguishing "does not
+    # exist" from "is not a file" would let a remote use this as an oracle for
+    # the existence of arbitrary files.
     # TODO: Add `follow_symlinks=True` to the is_file call after removing support for
     # python < 3.13.
-    if not pass_target_file.is_file():
-        raise ValueError(f"'{pass_target_file}' is not a file")
+    if not resolved.is_file():
+        raise ValueError(f"'{pass_target_file}' is not a usable password store entry")
 
 
 def get_password(
@@ -533,9 +843,12 @@ def get_password(
             Skip filesystem level checks for the presence of password store
             (.gpg) files.
     """
-    header = get_request_section_header(request)
-    section = find_mapping_section(mapping, header)
+    host, path = get_request_host_and_path(request)
+    section = find_mapping_section(mapping, host, path)
     LOGGER.debug("Found mapping section:\n%s", dict(section))
+
+    ensure_protocol_is_secure(section, request)
+    ensure_target_is_host_specific(section.name, section["target"])
 
     pass_target = define_pass_target(section, request)
 
@@ -575,20 +888,28 @@ def get_password(
 
     LOGGER.debug('Requesting entry "%s" from pass', pass_target)
     # silence the subprocess injection warnings as it is the user's
-    # responsibility to provide a safe mapping and execution environment
+    # responsibility to provide a safe mapping and execution environment.
+    # "--" terminates pass' option list so that a target starting with a dash
+    # can never be interpreted as an option (e.g. "-c1" acting as --clip=1).
     output = subprocess.check_output(
-        ["pass", "show", pass_target], env=environment
+        ["pass", "show", "--", pass_target], env=environment
     ).decode(section.get("encoding", "UTF-8"))
     lines = output.splitlines()
-    LOGGER.debug("Password store entry lines:\n%s", "\n".join(lines))
+    # Never log the entry contents or the extracted values: git captures the
+    # stderr of credential helpers, so under GIT_TRACE or in CI this would end
+    # up in persistent and often shared logs.
+    LOGGER.debug("Password store entry has %d line(s)", len(lines))
 
     password = password_extractor.get_value(pass_target, lines)
     username = username_extractor.get_value(pass_target, lines)
+    LOGGER.debug(
+        "Extraction results: password found: %s, username found: %s",
+        password is not None,
+        username is not None,
+    )
     if password:
-        LOGGER.debug("Found password: '%s'", password)
         print(f"password={password}")  # noqa: T201
     if "username" not in request and username:
-        LOGGER.debug("Found username: '%s'", username)
         print(f"username={username}")  # noqa: T201
 
 

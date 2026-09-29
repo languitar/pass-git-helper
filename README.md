@@ -91,28 +91,41 @@ This file uses ini syntax to specify the mapping of hosts to entries in the pass
 The first matching mapping from the configuration file is used to select the entry from the password store database.
 This search process is based on the order of definition in the configuration file.
 
-Section headers define patterns which are matched against the host part of a URL with a git repository.
-Matching supports wildcards (using the python [fnmatch module](https://docs.python.org/3.7/library/fnmatch.html)).
+A section header is a pattern consisting of a host part and, optionally, a path part separated from it by the first `/`:
+
+```text
+host-pattern[/path-pattern]
+```
+
+Both parts support wildcards, but with different rules:
+
+* The **host part** is matched per DNS label, that is per dot-separated component of the host name.
+  Pattern and host are split on `.` and their components matched pairwise, so a pattern only matches a host with the same number of labels, and a wildcard stays inside the label it appears in.
+  `*.example.com` matches `a.example.com` but not `a.b.example.com`, and `github.com*` matches `github.community` but not `github.com.evil.com`.
+  Within a label, ordinary [fnmatch](https://docs.python.org/3/library/fnmatch.html) syntax applies, character classes included.
+  A bare `*` is a catch-all matching any host regardless of its number of labels (see [Catch-All Sections](#catch-all-sections)).
+* In the **path part**, ordinary [fnmatch](https://docs.python.org/3/library/fnmatch.html) rules apply and `*` does cross `/`.
+* A section with **no path part applies to every path** on a matching host.
 
 Each section needs to contain a `target` entry pointing to the entry in the password store with the password (and optionally username) to use.
 
 Example:
 
 ```ini
-[github.com*]
+[github.com]
 target=dev/github
 
-[*.fooo-bar.*]
+[*.fooo-bar.com]
 target=dev/fooo-bar
 ```
 
-If you want to match entries not only based on the host, but also based on the path on a host, set `credential.useHttpPath` to `true` in your git config, e.g. via:
+To match on the path as well as the host, set `credential.useHttpPath` to `true` in your git config, e.g. via:
 
 ```sh
 git config credential.useHttpPath true
 ```
 
-Afterwards, entries can be matched against `host.com/path/to/repo` in the mapping.
+Afterwards, entries can also be matched against `host.com/path/to/repo` in the mapping.
 This means that in order to use a specific account for a certain Github project, you can then use the following mapping pattern:
 
 ```ini
@@ -120,16 +133,31 @@ This means that in order to use a specific account for a certain Github project,
 target=dev/github
 ```
 
-Please note that when including the path in the mapping, the mapping expressions need to match against the whole path.
-As a consequence, in case you want to use the same account for all Github projects, you need to make sure that a wildcard covers the path of the URL, as shown here:
+A section without a path part keeps applying to every path, so using the same account for all Github projects needs no wildcard at all:
 
 ```ini
-[github.com*]
+[github.com]
 target=dev/github
 ```
 
-The host can be used as a variable to address a pass entry.
-This is especially helpful for wildcard matches:
+#### Variables
+
+The parts of the request can be used as variables to address a pass entry.
+Given the remote url `https://languitar@github.com/languitar/pass-git-helper.git`, they are filled in as follows:
+
+| var | value |
+| --- | --- |
+| `${host}` | `github.com` |
+| `${username}` | `languitar` |
+| `${path}` | `languitar/pass-git-helper.git` |
+| `${protocol}` | `https` |
+
+These values come from the request and therefore from the remote git talks to, so they are validated before use:
+a value must not be empty, must not contain control characters, must not contain a path separator except for `${path}`, and cannot escape your password store.
+
+#### Catch-All Sections
+
+`${host}` is especially helpful for a catch-all section:
 
 ```ini
 [*]
@@ -138,14 +166,10 @@ target=git-logins/${host}
 
 The above configuration directive will lead to any host that did not match any previous section in the ini file to being looked up under the `git-logins` directory in your password store.
 
-Apart from `${host}`, the variables `${username}`, `${path}` and `${protocol}` can be used for replacements. Given the remote url `https://github.com/languitar/pass-git-helper.git`, variables are filled as follow:
-
-| var | value |
-| --- | --- |
-| `${host}` | `github.com` |
-| `${username}` | `languitar` |
-| `${path}` | `languitar/pass-git-helper.git` |
-| `${protocol}` | `https` |
+A section that matches any host **must** use `${host}` in its target, and a mapping which does otherwise is rejected.
+Without it, the credentials in that one entry would be handed to whatever host git is asked to authenticate against, including a host an attacker controls (see [Security](#security)).
+With it, the section is self-limiting: an unknown host resolves to an entry that does not exist, so nothing is decrypted and nothing is returned.
+Creating the entry for a host is what grants access to it.
 
 #### DEFAULT Section
 
@@ -187,6 +211,61 @@ The following config demonstrates this practices
 [github.com/mycompany]
 password_store_dir=~/.work-passwords
 ```
+
+## Security
+
+### What this helper trusts
+
+git asks a credential helper for the credentials of whatever host it is about to authenticate against, and whatever the helper answers is sent to that host.
+The host in a request is **not** necessarily one you chose: it can also come from
+
+* a clone URL you were given (`https://github.com.evil.com/x`),
+* a submodule URL inside a `.gitmodules` file of a repository you cloned,
+* an HTTP redirect away from a legitimate remote to a host that then asks for authentication.
+
+Your mapping file is therefore the boundary that decides who gets your passwords, and the patterns in it are security-relevant.
+Prefer sections that name hosts exactly, and reach for wildcards only where you really need them.
+
+### How mappings limit exposure
+
+* The host part of a section is matched per DNS label, so a wildcard stays inside its own label and a pattern cannot silently extend into a neighbouring domain.
+  `[github.com*]` does not match `github.com.evil.com`.
+* A section matching any host must address its entry via `${host}`, so it cannot hand one fixed credential to an arbitrary host.
+* Credentials are only served over `https` unless a section opts in with `allow_insecure_protocol=true`.
+* Values substituted from the request cannot escape your password store, contain path separators or control characters where they do not belong, or be empty.
+
+### Insecure Protocols
+
+By default, credentials are only provided for `https` requests, because git would otherwise transmit them in the clear.
+A request that carries no protocol at all is refused for the same reason.
+If a remote genuinely needs a plain-text protocol, such as a local test server, allow it per section:
+
+```ini
+[localhost]
+target=dev/local-test
+allow_insecure_protocol=true
+```
+
+### Debug Logging
+
+`-l` deliberately does not log decrypted entry contents, extracted passwords or usernames, since git captures the stderr of credential helpers and those logs tend to outlive the command.
+It does log which mapping section matched, which includes that section's configuration.
+
+## Migration to 5.0
+
+Version 5.0 tightens mapping semantics to close credential leaks. Check your mapping file against the following changes:
+
+* **Host wildcards no longer cross dots.**
+  `[github.com*]` still matches `github.com`, but no longer `github.com.evil.com`.
+  `[*.example.com]` now covers exactly one label, so `a.b.example.com` needs `[*.*.example.com]`.
+  If you relied on a wildcard spanning several labels, spell the labels out.
+* **Sections without a path part now match requests that carry a path.**
+  Previously a host-only section stopped matching once `credential.useHttpPath` was enabled, which is why earlier versions of this document told you to append a trailing `*`.
+  That is no longer needed: `[github.com]` covers every path on the host. Sections that should only apply to certain paths must name them, as in `[github.com/user/project*]`.
+* **A section matching any host must use `${host}` in its target.**
+  `[*]` with `target=dev/github` is now rejected; use `target=git-logins/${host}`, or replace the section with ones naming the hosts it should serve.
+* **Only `https` is served by default.**
+  Add `allow_insecure_protocol=true` to sections used with `http` or other plain-text protocols.
 
 ## Password Store Layout and Data Extraction
 
@@ -246,7 +325,6 @@ password_extractor=specific_line
 line_password=0
 # length of "password: "
 skip_password=10
-
 
 [example.com]
 # For some reason, this entry doesn't have a password prefix

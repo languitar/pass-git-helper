@@ -257,7 +257,7 @@ def helper_config(
     else:
         subprocess_mock.side_effect = CalledProcessError(
             returncode=1,
-            cmd=["pass", "show", test_params.get_pass_target() or "unknown"],
+            cmd=["pass", "show", "--", test_params.get_pass_target() or "unknown"],
         )
 
     yield HelperConfigAndMock(test_params, subprocess_mock)
@@ -265,7 +265,7 @@ def helper_config(
     if test_params.mock_co_expect_call:
         subprocess_mock.assert_called_once()
         subprocess_mock.assert_called_with(
-            ["pass", "show", test_params.entry_name], env=ANY
+            ["pass", "show", "--", test_params.entry_name], env=ANY
         )
     else:
         subprocess_mock.assert_not_called()
@@ -626,6 +626,323 @@ def test_parse_mapping_from_xdg() -> None:
     assert config["mytest.com"]["target"] == "dev/mytest"
 
 
+class TestEnsureProtocolIsSecure:
+    @staticmethod
+    def _section(**options: str) -> configparser.SectionProxy:
+        config = configparser.ConfigParser()
+        config.read_string("[test]\ntarget = dev/mytest\n")
+        config["test"].update(options)
+        return config["test"]
+
+    def test_accepts_https(self) -> None:
+        passgithelper.ensure_protocol_is_secure(
+            self._section(), {"protocol": "https", "host": "example.com"}
+        )
+
+    @pytest.mark.parametrize("protocol", ["http", "git", "ftp", "HTTPS"])
+    def test_rejects_insecure_protocol(self, protocol: str) -> None:
+        with pytest.raises(ValueError, match="insecure protocol"):
+            passgithelper.ensure_protocol_is_secure(
+                self._section(), {"protocol": protocol, "host": "example.com"}
+            )
+
+    def test_rejects_missing_protocol(self) -> None:
+        """A request without a protocol must not be assumed to be https."""
+        with pytest.raises(ValueError, match="without a protocol"):
+            passgithelper.ensure_protocol_is_secure(
+                self._section(), {"host": "example.com"}
+            )
+
+    @pytest.mark.parametrize("protocol", ["http", "git"])
+    def test_allows_insecure_protocol_when_opted_in(self, protocol: str) -> None:
+        passgithelper.ensure_protocol_is_secure(
+            self._section(allow_insecure_protocol="true"),
+            {"protocol": protocol, "host": "example.com"},
+        )
+
+    def test_opt_out_does_not_apply_when_false(self) -> None:
+        with pytest.raises(ValueError, match="insecure protocol"):
+            passgithelper.ensure_protocol_is_secure(
+                self._section(allow_insecure_protocol="false"),
+                {"protocol": "http", "host": "example.com"},
+            )
+
+
+class TestEnsureTargetIsHostSpecific:
+    @pytest.mark.parametrize(
+        "section_name",
+        [
+            "*",
+            "?",
+            # Still matches any two- or three-label host after wildcards became
+            # label-bounded, so a plain comparison against "*" would miss these.
+            "*.*",
+            "*.*.*",
+            "?.?",
+            # The path part does not make the host part any more specific.
+            "*/user/repo",
+        ],
+    )
+    def test_rejects_catch_all_with_host_independent_target(
+        self, section_name: str
+    ) -> None:
+        with pytest.raises(ValueError, match="matches any host"):
+            passgithelper.ensure_target_is_host_specific(section_name, "dev/mytest")
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "git-logins/${host}",
+            "${host}",
+            "dev/${protocol}/${host}/${username}",
+        ],
+    )
+    def test_accepts_catch_all_with_host_in_target(self, target: str) -> None:
+        passgithelper.ensure_target_is_host_specific("*", target)
+
+    @pytest.mark.parametrize(
+        "section_name",
+        [
+            "github.com",
+            "github.com*",
+            "*.example.com",
+            "github.com/user/*",
+        ],
+    )
+    def test_accepts_bounded_host_with_any_target(self, section_name: str) -> None:
+        passgithelper.ensure_target_is_host_specific(section_name, "dev/mytest")
+
+    def test_checks_raw_target_not_substituted_one(self) -> None:
+        """A target that merely contains the host's text must not qualify."""
+        with pytest.raises(ValueError, match="matches any host"):
+            passgithelper.ensure_target_is_host_specific("*", "dev/github.com")
+
+
+class TestSectionMatching:
+    @pytest.mark.parametrize(
+        ("pattern", "host", "path"),
+        [
+            # A host pattern must not extend past the domain the user wrote.
+            # These are the cases that leaked credentials to look-alike hosts.
+            ("github.com*", "github.com.evil.com", None),
+            ("github.com*", "github.com.evil.com", "victim/repo"),
+            ("*.fooo-bar.*", "x.fooo-bar.evil.com", None),
+            ("github.com/user/project*", "github.com.evil.com", "user/project"),
+            ("github.com*", "github.commercial.example", None),
+            # A wildcard covers a single label, not several.
+            ("*.example.com", "a.b.example.com", None),
+            ("?.example.com", "ab.example.com", None),
+            # Unrelated hosts.
+            ("github.com", "gitlab.com", None),
+            # A character class only matches what it lists.
+            ("github[12].com", "github3.com", None),
+            # A wildcard must not be able to match a path separator, even
+            # though a host from git never contains one.
+            ("*", "github.com/evil", None),
+            ("github.com*", "github.com/evil", None),
+            # A path pattern must actually match.
+            ("github.com/user/project*", "github.com", "other/project"),
+            # A path pattern cannot match a request without a path.
+            ("github.com/user/project*", "github.com", None),
+        ],
+    )
+    def test_does_not_match(self, pattern: str, host: str, path: str | None) -> None:
+        assert not passgithelper.match_section_pattern(pattern, host, path)
+
+    @pytest.mark.parametrize(
+        ("pattern", "host", "path"),
+        [
+            # Exact host, with and without a path in the request.
+            ("github.com", "github.com", None),
+            ("github.com", "github.com", "user/repo.git"),
+            # A trailing wildcard still matches the host it was written for.
+            ("github.com*", "github.com", None),
+            ("github.com*", "github.com", "user/repo.git"),
+            ("github.com*", "github.community", None),
+            # A wildcard covering exactly one label.
+            ("*.example.com", "a.example.com", None),
+            ("?.example.com", "a.example.com", None),
+            ("*.fooo-bar.*", "x.fooo-bar.com", None),
+            # The documented catch-all.
+            ("*", "github.com", None),
+            ("*", "a.b.c.example.com", "deep/path.git"),
+            # Character classes work inside a label.
+            ("github[12].com", "github1.com", None),
+            ("[gh]ithub.com", "github.com", None),
+            # Path patterns, where a wildcard crossing "/" is intended.
+            ("github.com/user/project*", "github.com", "user/project"),
+            ("github.com/user/project*", "github.com", "user/project.git"),
+            ("github.com/user/*", "github.com", "user/nested/repo.git"),
+        ],
+    )
+    def test_matches(self, pattern: str, host: str, path: str | None) -> None:
+        assert passgithelper.match_section_pattern(pattern, host, path)
+
+    def test_first_matching_section_wins(self) -> None:
+        mapping = configparser.ConfigParser()
+        mapping.read_string(
+            "[github.com/user/*]\ntarget = specific\n[github.com]\ntarget = general\n"
+        )
+
+        assert (
+            passgithelper.find_mapping_section(mapping, "github.com", "user/repo.git")[
+                "target"
+            ]
+            == "specific"
+        )
+        assert (
+            passgithelper.find_mapping_section(mapping, "github.com", "other/repo.git")[
+                "target"
+            ]
+            == "general"
+        )
+
+
+def _section(target: str) -> configparser.SectionProxy:
+    config = configparser.ConfigParser()
+    config.read_string(f"[test]\ntarget = {target}\n")
+    return config["test"]
+
+
+class TestDefinePassTarget:
+    def test_substitutes_all_variables(self) -> None:
+        section = _section("dev/${protocol}/${host}/${username}/${path}")
+        request = {
+            "protocol": "https",
+            "host": "example.com",
+            "username": "user1",
+            "path": "user1/repo.git",
+        }
+
+        assert (
+            passgithelper.define_pass_target(section, request)
+            == "dev/https/example.com/user1/user1/repo.git"
+        )
+
+    def test_keeps_placeholder_when_not_in_request(self) -> None:
+        section = _section("dev/${host}/${path}")
+
+        assert (
+            passgithelper.define_pass_target(section, {"host": "example.com"})
+            == "dev/example.com/${path}"
+        )
+
+    def test_ignores_unsafe_value_that_is_not_substituted(self) -> None:
+        """A value which the target never uses must not break the lookup."""
+        section = _section("dev/${host}")
+        request = {"host": "example.com", "username": "../../elsewhere"}
+
+        assert passgithelper.define_pass_target(section, request) == "dev/example.com"
+
+    @pytest.mark.parametrize(
+        ("variable", "value"),
+        [
+            # Traversal out of the password store.
+            ("username", "../../other"),
+            ("path", "../../other"),
+            ("path", "user1/../../other"),
+            # Collapses the target onto a directory, for which `pass show`
+            # prints a tree of entry names.
+            ("host", ""),
+            ("username", ""),
+            # Separators in values which must not contain any.
+            ("username", "a/b"),
+            ("host", "a/b"),
+            ("protocol", "a/b"),
+            # Windows-style separators must not slip a traversal past the
+            # checks on a platform where the filesystem would honour them.
+            ("username", "a\\b"),
+            ("path", "..\\..\\other"),
+            ("path", "user1\\..\\..\\other"),
+            # Control characters, none of which belong in an entry name.
+            ("username", "a\nb"),
+            ("username", "a\rb"),
+            ("username", "a\0b"),
+            ("username", "a\tb"),
+            ("username", "a\x1bb"),
+            ("username", "a\x7fb"),
+        ],
+    )
+    def test_rejects_unsafe_request_values(self, variable: str, value: str) -> None:
+        section = _section(f"dev/${{host}}/${{{variable}}}")
+        request = {"host": "example.com", variable: value}
+
+        with pytest.raises(ValueError, match=variable):
+            passgithelper.define_pass_target(section, request)
+
+    @pytest.mark.parametrize(
+        ("target", "request_username", "expected"),
+        [
+            # A leading dash is a legitimate entry name: "--" terminates pass'
+            # option list, so it cannot be mistaken for an option.
+            ("-weird-name", "user1", "-weird-name"),
+            ("${username}", "-c1", "-c1"),
+            ("dev/${username}", "-c1", "dev/-c1"),
+        ],
+    )
+    def test_allows_target_starting_with_dash(
+        self, target: str, request_username: str, expected: str
+    ) -> None:
+        section = _section(target)
+        request = {"host": "example.com", "username": request_username}
+
+        assert passgithelper.define_pass_target(section, request) == expected
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "/etc/shadow",
+            "\\\\etc\\\\shadow",
+            "C:/Windows/System32",
+            "c:\\\\Windows",
+        ],
+    )
+    def test_rejects_absolute_target(self, target: str) -> None:
+        section = _section(target)
+
+        with pytest.raises(ValueError, match=r"starts with a (path separator|drive)"):
+            passgithelper.define_pass_target(section, {"host": "example.com"})
+
+
+class TestEnsurePasswordIsFile:
+    @pytest.fixture
+    def store(self, tmp_path: Path) -> Path:
+        store = tmp_path / "store"
+        (store / "dev").mkdir(parents=True)
+        (store / "dev" / "entry.gpg").write_bytes(b"encrypted")
+        (tmp_path / "outside.gpg").write_bytes(b"encrypted")
+        return store
+
+    def test_accepts_entry_in_store(self, store: Path) -> None:
+        passgithelper.ensure_password_is_file(store, "dev/entry")
+
+    @pytest.mark.parametrize(
+        "pass_target",
+        [
+            # An absolute target would otherwise discard the store directory
+            # entirely when joined onto it.
+            "/etc/shadow",
+            "../outside",
+            "dev/../../outside",
+        ],
+    )
+    def test_rejects_target_outside_store(self, store: Path, pass_target: str) -> None:
+        with pytest.raises(ValueError, match="outside of the password store"):
+            passgithelper.ensure_password_is_file(store, pass_target)
+
+    @pytest.mark.parametrize("pass_target", ["dev/missing", "dev"])
+    def test_rejects_unusable_entry_uniformly(
+        self, store: Path, pass_target: str
+    ) -> None:
+        """Missing and non-file entries must be indistinguishable.
+
+        Separate messages would let a remote use this as an oracle for the
+        existence of arbitrary files.
+        """
+        with pytest.raises(ValueError, match="is not a usable password store entry"):
+            passgithelper.ensure_password_is_file(store, pass_target)
+
+
 class TestScript:
     def test_help(self, capsys: CapsysType) -> None:
         with pytest.raises(SystemExit, match=r"^0$"):
@@ -669,6 +986,40 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
+                xdg_dir="test_data/regex-username-extraction",
+                request="""
+protocol=https
+host=mytest.com""",
+                entry_data=b"top-secret-password\nmyuser: someone",
+                entry_name="dev/mytest",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_debug_logging_does_not_leak_secrets(
+        self, capsys: CapsysType, caplog: CaplogType
+    ) -> None:
+        """Debug logs must not contain the entry contents or extracted values.
+
+        git captures the stderr of credential helpers, so anything logged here
+        can end up in persistent and often shared logs.
+        """
+        with caplog.at_level(logging.DEBUG):
+            passgithelper.main(["--logging", "get"])
+
+        out, _ = capsys.readouterr()
+        assert out == "password=top-secret-password\nusername=someone\n"
+
+        logged = "\n".join(record.getMessage() for record in caplog.records)
+        assert logged
+        assert "top-secret-password" not in logged
+        assert "someone" not in logged
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
                 request="host=ignored",
                 mock_co_expect_call=False,
             ),
@@ -682,7 +1033,7 @@ host=mytest.com""",
             passgithelper.main(["store"])
 
         assert caplog.record_tuples[-1] == (
-            "root",
+            passgithelper.__name__,
             logging.INFO,
             "Action 'store' is currently not supported",
         )
@@ -752,6 +1103,97 @@ host=mytest.com""",
 protocol=https
 host=mytest.com
 path=/foo/bar.git""",
+                entry_data=b"narf",
+                entry_name="dev/mytest",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_host_only_section_applies_to_any_path(self, capsys: CapsysType) -> None:
+        """A section without a path pattern matches regardless of the request path.
+
+        Previously a host-only section stopped matching as soon as
+        credential.useHttpPath was enabled, which pushed users towards a
+        trailing wildcard such as [mytest.com*] purely to cover the path.
+        """
+        passgithelper.main(["get"])
+
+        out, err = capsys.readouterr()
+        assert out == "password=narf\n"
+        assert not err
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            # Plain http, which would put the password on the wire.
+            HelperConfig(
+                xdg_dir="test_data/insecure-protocol",
+                request="""
+protocol=http
+host=mytest.com""",
+                mock_co_expect_call=False,
+                err_expected="insecure protocol 'http'",
+            ),
+            # Another non-https protocol.
+            HelperConfig(
+                xdg_dir="test_data/insecure-protocol",
+                request="""
+protocol=git
+host=mytest.com""",
+                mock_co_expect_call=False,
+                err_expected="insecure protocol 'git'",
+            ),
+            # No protocol at all must not be assumed to be https.
+            HelperConfig(
+                xdg_dir="test_data/insecure-protocol",
+                request="""
+host=mytest.com""",
+                mock_co_expect_call=False,
+                err_expected="a request without a protocol",
+            ),
+        ],
+        indirect=True,
+    )
+    def test_refuses_insecure_protocol(
+        self, capsys: CapsysType, helper_config: HelperConfigAndMock
+    ) -> None:
+        """No credentials for non-https, and pass must not even be invoked."""
+        with pytest.raises(SystemExit, match=r"^3$"):
+            passgithelper.main(["get"])
+
+        teardown_helper_capsys_checks(capsys, helper_config.test_params)
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                xdg_dir="test_data/insecure-protocol",
+                request="""
+protocol=http
+host=insecure.com""",
+                entry_data=b"narf",
+                entry_name="dev/insecure",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_allows_insecure_protocol_when_opted_in(self, capsys: CapsysType) -> None:
+        passgithelper.main(["get"])
+
+        out, _ = capsys.readouterr()
+        assert out == "password=narf\n"
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                xdg_dir="test_data/with-path",
+                request="""
+protocol=https
+host=mytest.com
+path=nomatch/bar.git""",
                 entry_data=b"ignored",
                 mock_co_expect_call=False,
             ),
@@ -759,8 +1201,36 @@ path=/foo/bar.git""",
         indirect=True,
     )
     @pytest.mark.usefixtures("helper_config")
-    def test_path_used_if_present_fails(self, capsys: CapsysType) -> None:
-        """Request contains `path` which does not have a corresponding section in mapping file."""
+    def test_path_restricted_section_not_used_for_other_path(
+        self, capsys: CapsysType
+    ) -> None:
+        """A section restricting the path must not match a different path."""
+        with pytest.raises(SystemExit, match=r"^3$"):
+            passgithelper.main(["get"])
+
+        out, err = capsys.readouterr()
+        assert not out
+        assert "No mapping section" in err
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
+                xdg_dir="test_data/with-path",
+                request="""
+protocol=https
+host=mytest.com""",
+                entry_data=b"ignored",
+                mock_co_expect_call=False,
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_path_restricted_section_not_used_without_path(
+        self, capsys: CapsysType
+    ) -> None:
+        """A section restricting the path must not match a request without one."""
         with pytest.raises(SystemExit, match=r"^3$"):
             passgithelper.main(["get"])
 
@@ -864,6 +1334,7 @@ path=subpath/bar.git""",
             HelperConfig(
                 xdg_dir="test_data/with-username",
                 request="""
+protocol=https
 host=plainline.com""",
                 entry_data=b"password\nusername",
                 entry_name="dev/plainline",
@@ -885,6 +1356,7 @@ host=plainline.com""",
             HelperConfig(
                 xdg_dir="test_data/with-username",
                 request="""
+protocol=https
 host=plainline.com
 username=narf""",
                 entry_data=b"password\nusername",
@@ -1061,7 +1533,7 @@ host=mytest.com""",
         teardown_helper_capsys_checks(capsys, test_params, out_use_equals=True)
 
         assert (
-            "root",
+            passgithelper.__name__,
             logging.WARNING,
             "Mapping file contains empty 'password_extractor', please check!",
         ) in caplog.record_tuples
@@ -1183,6 +1655,7 @@ host=unknown""",
             HelperConfig(
                 xdg_dir="test_data/password_store_dir",
                 request="""
+protocol=https
 host=example.com""",
                 entry_data="test".encode("UTF-8"),
                 entry_name="dev/mytest",
@@ -1234,6 +1707,9 @@ host=example.com""",
         assert password_store_dir == Path(pws_dir_expected).expanduser()
 
     # test parametrization
+    # Note: cases 3 to 5 deliberately share one error message. Distinguishing
+    # them would let a remote use the helper as an oracle for the existence of
+    # arbitrary files; what matters here is that each case is rejected.
     argvalues_ensure_password_is_file: ClassVar[list[HelperConfig]] = [
         # 1. pass_target pointing to valid (but unencrypted) password store file
         HelperConfig(
@@ -1258,7 +1734,7 @@ host=example.com""",
             request="\nprotocol=https\nhost=example.com\n",
             patch_ensure_password_is_file=False,
             mock_co_expect_call=False,
-            err_expected="/example.com/doesnotexist.gpg' does not exist",
+            err_expected="/example.com/doesnotexist.gpg' is not a usable password store entry",
         ),
         # 4. pass_target pointing to a directory
         HelperConfig(
@@ -1266,7 +1742,7 @@ host=example.com""",
             request="\nprotocol=https\nhost=example.com\n",
             patch_ensure_password_is_file=False,
             mock_co_expect_call=False,
-            err_expected="/git/example.com.gpg' does not exist",
+            err_expected="/git/example.com.gpg' is not a usable password store entry",
         ),
         # 5. pass_target pointing to a directory `<dir>` with another directory
         #    `<dir>.gpg`
@@ -1275,7 +1751,7 @@ host=example.com""",
             request="\nprotocol=https\nhost=github.com\n",
             patch_ensure_password_is_file=False,
             mock_co_expect_call=False,
-            err_expected="/git/github.com.gpg' is not a file",
+            err_expected="/git/github.com.gpg' is not a usable password store entry",
         ),
         # 6. pass_target pointing to password store file with identically named
         #    directory
@@ -1387,7 +1863,7 @@ host=example.com""",
                 request="\nprotocol=https\nhost=example.com\n",
                 patch_ensure_password_is_file=False,
                 mock_co_expect_call=False,
-                err_expected="/git/example.com.gpg' does not exist",
+                err_expected="/git/example.com.gpg' is not a usable password store entry",
             ),
             HelperConfig(
                 entry_name="git/example.com",
@@ -1444,7 +1920,7 @@ host=example.com""",
                 "passgithelper.ensure_password_is_file"
             )
             caplog_record = (
-                "root",
+                passgithelper.__name__,
                 logging.DEBUG,
                 "Filesystem level checks for password store files are disabled",
             )
