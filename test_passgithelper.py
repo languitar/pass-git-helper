@@ -669,6 +669,40 @@ host=mytest.com""",
         "helper_config",
         [
             HelperConfig(
+                xdg_dir="test_data/regex-username-extraction",
+                request="""
+protocol=https
+host=mytest.com""",
+                entry_data=b"top-secret-password\nmyuser: someone",
+                entry_name="dev/mytest",
+            ),
+        ],
+        indirect=True,
+    )
+    @pytest.mark.usefixtures("helper_config")
+    def test_debug_logging_does_not_leak_secrets(
+        self, capsys: CapsysType, caplog: CaplogType
+    ) -> None:
+        """Debug logs must not contain the entry contents or extracted values.
+
+        git captures the stderr of credential helpers, so anything logged here
+        can end up in persistent and often shared logs.
+        """
+        with caplog.at_level(logging.DEBUG):
+            passgithelper.main(["--logging", "get"])
+
+        out, _ = capsys.readouterr()
+        assert out == "password=top-secret-password\nusername=someone\n"
+
+        logged = "\n".join(record.getMessage() for record in caplog.records)
+        assert logged
+        assert "top-secret-password" not in logged
+        assert "someone" not in logged
+
+    @pytest.mark.parametrize(
+        "helper_config",
+        [
+            HelperConfig(
                 request="host=ignored",
                 mock_co_expect_call=False,
             ),
@@ -682,7 +716,7 @@ host=mytest.com""",
             passgithelper.main(["store"])
 
         assert caplog.record_tuples[-1] == (
-            "root",
+            passgithelper.__name__,
             logging.INFO,
             "Action 'store' is currently not supported",
         )
@@ -1061,7 +1095,7 @@ host=mytest.com""",
         teardown_helper_capsys_checks(capsys, test_params, out_use_equals=True)
 
         assert (
-            "root",
+            passgithelper.__name__,
             logging.WARNING,
             "Mapping file contains empty 'password_extractor', please check!",
         ) in caplog.record_tuples
@@ -1444,7 +1478,7 @@ host=example.com""",
                 "passgithelper.ensure_password_is_file"
             )
             caplog_record = (
-                "root",
+                passgithelper.__name__,
                 logging.DEBUG,
                 "Filesystem level checks for password store files are disabled",
             )

@@ -21,7 +21,7 @@ import xdg.BaseDirectory
 
 __version__ = "4.3.0"
 
-LOGGER = logging.getLogger()
+LOGGER = logging.getLogger(__name__)
 CONFIG_FILE_NAME = "git-pass-mapping.ini"
 DEFAULT_CONFIG_FILE = (
     Path(xdg.BaseDirectory.save_config_path("pass-git-helper")) / CONFIG_FILE_NAME
@@ -582,15 +582,21 @@ def get_password(
         ["pass", "show", "--", pass_target], env=environment
     ).decode(section.get("encoding", "UTF-8"))
     lines = output.splitlines()
-    LOGGER.debug("Password store entry lines:\n%s", "\n".join(lines))
+    # Never log the entry contents or the extracted values: git captures the
+    # stderr of credential helpers, so under GIT_TRACE or in CI this would end
+    # up in persistent and often shared logs.
+    LOGGER.debug("Password store entry has %d line(s)", len(lines))
 
     password = password_extractor.get_value(pass_target, lines)
     username = username_extractor.get_value(pass_target, lines)
+    LOGGER.debug(
+        "Extraction results: password found: %s, username found: %s",
+        password is not None,
+        username is not None,
+    )
     if password:
-        LOGGER.debug("Found password: '%s'", password)
         print(f"password={password}")  # noqa: T201
     if "username" not in request and username:
-        LOGGER.debug("Found username: '%s'", username)
         print(f"username={username}")  # noqa: T201
 
 
