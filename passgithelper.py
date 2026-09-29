@@ -398,33 +398,141 @@ class ExtractorContainer:
         )
 
 
+def split_section_into_host_and_path(pattern: str) -> tuple[str, str]:
+    """Split a mapping section name into its host and path patterns.
+
+    Args:
+        pattern:
+            The section name from the mapping file.
+
+    Returns:
+        A tuple (host_pattern, path_pattern). ``path_pattern`` is empty if the
+        section does not restrict the path.
+    """
+    host_pattern, _, path_pattern = pattern.partition("/")
+    return host_pattern, path_pattern
+
+
+def match_host_pattern(host_pattern: str, host: str) -> bool:
+    """Match a host against the host part of a mapping section name.
+
+    Matching is per DNS label, i.e. per dot-separated component of the host
+    name: the pattern and the host are split on ``.`` and the components are
+    matched pairwise, so a pattern only ever matches a host with the same number
+    of labels. Wildcards are thereby confined to the label they appear in and a
+    pattern cannot extend into a neighbouring domain: ``github.com*`` matches
+    ``github.community`` but not ``github.com.evil.com``, which would otherwise
+    hand the credentials for one host to an entirely different one.
+
+    Within a single label, ordinary ``fnmatch`` syntax applies, character
+    classes included. A bare ``*`` is a catch-all matching any host regardless
+    of how many labels it has.
+
+    Args:
+        host_pattern:
+            The host part of a mapping section name.
+        host:
+            The host from the credential request.
+
+    Returns:
+        Whether the pattern matches the host.
+    """
+    # A host from git never contains a path separator, but no pattern must be
+    # able to match one if it ever did, the catch-all included.
+    if "/" in host:
+        return False
+
+    if host_pattern == "*":
+        return True
+
+    pattern_labels = host_pattern.split(".")
+    host_labels = host.split(".")
+    if len(pattern_labels) != len(host_labels):
+        return False
+
+    return all(
+        fnmatch.fnmatch(host_label, pattern_label)
+        for pattern_label, host_label in zip(pattern_labels, host_labels)
+    )
+
+
+def match_section_pattern(pattern: str, host: str, path: Optional[str]) -> bool:
+    """Match a credential request against a mapping section name.
+
+    Args:
+        pattern:
+            The section name from the mapping file.
+        host:
+            The host from the credential request.
+        path:
+            The path from the credential request, or ``None`` if the request
+            carries none (i.e. ``credential.useHttpPath`` is not enabled).
+
+    Returns:
+        Whether the section applies to the request.
+    """
+    host_pattern, path_pattern = split_section_into_host_and_path(pattern)
+
+    if not match_host_pattern(host_pattern, host):
+        return False
+
+    if not path_pattern:
+        # The section does not restrict the path, so it applies to every path
+        # on a matching host.
+        return True
+
+    if path is None:
+        LOGGER.debug(
+            'Section "%s" restricts the path, but the request carries none. '
+            "Enable credential.useHttpPath in git to match on paths.",
+            pattern,
+        )
+        return False
+
+    # Inside the path, a wildcard crossing "/" is intended.
+    return fnmatch.fnmatch(path, path_pattern)
+
+
 def find_mapping_section(
-    mapping: configparser.ConfigParser, request_header: str
+    mapping: configparser.ConfigParser, host: str, path: Optional[str]
 ) -> configparser.SectionProxy:
-    """Select the mapping entry matching the request header."""
-    LOGGER.debug('Searching mapping to match against header "%s"', request_header)
+    """Select the mapping entry matching the request host and path."""
+    LOGGER.debug('Searching mapping to match against host "%s", path "%s"', host, path)
     for section in mapping.sections():
-        if fnmatch.fnmatch(request_header, section):
+        if match_section_pattern(section, host, path):
             LOGGER.debug(
-                'Section "%s" matches requested header "%s"', section, request_header
+                'Section "%s" matches requested host "%s", path "%s"',
+                section,
+                host,
+                path,
             )
             return mapping[section]
 
     raise ValueError(
-        f"No mapping section in {mapping.sections()} matches request {request_header}"
+        f"No mapping section in {mapping.sections()} matches request "
+        f"{get_request_header(host, path)}"
     )
 
 
-def get_request_section_header(request: Mapping[str, str]) -> str:
-    """Return the canonical host + optional path for section header matching."""
+def get_request_host_and_path(
+    request: Mapping[str, str],
+) -> tuple[str, Optional[str]]:
+    """Return the host and optional path of a credential request.
+
+    Raises:
+        ValueError
+            when the request carries no host.
+    """
     if "host" not in request:
         LOGGER.error("host= entry missing in request. Cannot query without a host")
         raise ValueError("Request lacks host entry")
 
-    host = request["host"]
-    if "path" in request:
-        host = "/".join([host, request["path"]])
-    return host
+    return request["host"], request.get("path")
+
+
+def get_request_header(host: str, path: Optional[str]) -> str:
+    """Return a human readable "host/path" for log and error messages."""
+    return "/".join([host, path]) if path is not None else host
 
 
 def split_path_segments(value: str) -> list[str]:
@@ -631,8 +739,8 @@ def get_password(
             Skip filesystem level checks for the presence of password store
             (.gpg) files.
     """
-    header = get_request_section_header(request)
-    section = find_mapping_section(mapping, header)
+    host, path = get_request_host_and_path(request)
+    section = find_mapping_section(mapping, host, path)
     LOGGER.debug("Found mapping section:\n%s", dict(section))
 
     pass_target = define_pass_target(section, request)
