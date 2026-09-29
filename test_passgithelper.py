@@ -626,6 +626,56 @@ def test_parse_mapping_from_xdg() -> None:
     assert config["mytest.com"]["target"] == "dev/mytest"
 
 
+class TestEnsureTargetIsHostSpecific:
+    @pytest.mark.parametrize(
+        "section_name",
+        [
+            "*",
+            "?",
+            # Still matches any two- or three-label host after wildcards became
+            # label-bounded, so a plain comparison against "*" would miss these.
+            "*.*",
+            "*.*.*",
+            "?.?",
+            # The path part does not make the host part any more specific.
+            "*/user/repo",
+        ],
+    )
+    def test_rejects_catch_all_with_host_independent_target(
+        self, section_name: str
+    ) -> None:
+        with pytest.raises(ValueError, match="matches any host"):
+            passgithelper.ensure_target_is_host_specific(section_name, "dev/mytest")
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "git-logins/${host}",
+            "${host}",
+            "dev/${protocol}/${host}/${username}",
+        ],
+    )
+    def test_accepts_catch_all_with_host_in_target(self, target: str) -> None:
+        passgithelper.ensure_target_is_host_specific("*", target)
+
+    @pytest.mark.parametrize(
+        "section_name",
+        [
+            "github.com",
+            "github.com*",
+            "*.example.com",
+            "github.com/user/*",
+        ],
+    )
+    def test_accepts_bounded_host_with_any_target(self, section_name: str) -> None:
+        passgithelper.ensure_target_is_host_specific(section_name, "dev/mytest")
+
+    def test_checks_raw_target_not_substituted_one(self) -> None:
+        """A target that merely contains the host's text must not qualify."""
+        with pytest.raises(ValueError, match="matches any host"):
+            passgithelper.ensure_target_is_host_specific("*", "dev/github.com")
+
+
 class TestSectionMatching:
     @pytest.mark.parametrize(
         ("pattern", "host", "path"),

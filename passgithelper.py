@@ -456,6 +456,65 @@ def match_host_pattern(host_pattern: str, host: str) -> bool:
     )
 
 
+def is_unbounded_host_pattern(host_pattern: str) -> bool:
+    """Whether a host pattern matches hosts the user never explicitly named.
+
+    Such a pattern matches hosts an attacker controls just as readily as the
+    user's own, so it must not resolve to a fixed password store entry.
+
+    The test is whether anything is left of the pattern once the wildcards and
+    the label separator are removed: what remains is the literal host content
+    the user actually committed to. ``.`` is removed along with the wildcards
+    because it only delimits labels and names no host by itself, so ``*.*``
+    names no host any more than ``*`` does. This deliberately is not a
+    comparison against ``*``: matching is per label, but ``*.*`` still matches
+    every two-label host.
+
+    Args:
+        host_pattern:
+            The host part of a mapping section name.
+
+    Returns:
+        Whether the pattern matches hosts indiscriminately.
+    """
+    return not host_pattern.strip("*?.")
+
+
+def ensure_target_is_host_specific(section_name: str, target: str) -> None:
+    """Reject a catch-all section whose target does not depend on the host.
+
+    A section matching any host, paired with a target that is the same for every
+    host, hands one fixed credential to whatever host a remote can steer git
+    towards. Requiring ``${host}`` in the target keeps such a section
+    self-limiting: an unknown host resolves to an entry that does not exist, so
+    nothing is decrypted and nothing is returned.
+
+    Args:
+        section_name:
+            Name of the matched mapping section.
+        target:
+            The raw ``target`` value of that section, before substitution, so
+            that a target which merely happens to contain the host's text does
+            not satisfy the requirement.
+
+    Raises:
+        ValueError
+            when the section matches any host but its target does not use
+            ``${host}``.
+    """
+    host_pattern, _ = split_section_into_host_and_path(section_name)
+    if is_unbounded_host_pattern(host_pattern) and "${host}" not in target:
+        raise ValueError(
+            f"Mapping section '{section_name}' matches any host, but its target "
+            f"'{target}' is the same for every host. That combination would hand "
+            "the credentials in that one entry to whatever host git is asked to "
+            "authenticate against, including a host an attacker controls, so it "
+            "is refused. Either add ${host} to the target, which makes the "
+            "section resolve to a different entry per host, or replace the "
+            "section with ones naming the hosts it should serve."
+        )
+
+
 def match_section_pattern(pattern: str, host: str, path: Optional[str]) -> bool:
     """Match a credential request against a mapping section name.
 
@@ -742,6 +801,8 @@ def get_password(
     host, path = get_request_host_and_path(request)
     section = find_mapping_section(mapping, host, path)
     LOGGER.debug("Found mapping section:\n%s", dict(section))
+
+    ensure_target_is_host_specific(section.name, section["target"])
 
     pass_target = define_pass_target(section, request)
 
