@@ -205,10 +205,15 @@ class SkippingDataExtractor(DataExtractor):
 
     def configure(self, config: configparser.SectionProxy) -> None:
         """Configure the amount of characters to skip."""
-        self._prefix_length = config.getint(
+        skip = config.getint(
             f"skip{self._option_suffix}",
             fallback=self._prefix_length,
         )
+        if skip < 0:
+            raise ValueError(
+                f"skip{self._option_suffix} must not be negative, got {skip}."
+            )
+        self._prefix_length = skip
 
     @abc.abstractmethod
     def _get_raw(self, entry_name: Text, entry_lines: Sequence[Text]) -> Optional[Text]:
@@ -245,7 +250,12 @@ class SpecificLineExtractor(SkippingDataExtractor):
     def configure(self, config: configparser.SectionProxy) -> None:
         """See base class method."""
         super().configure(config)
-        self._line = config.getint(f"line{self._option_suffix}", fallback=self._line)
+        line = config.getint(f"line{self._option_suffix}", fallback=self._line)
+        if line < 0:
+            raise ValueError(
+                f"line{self._option_suffix} must not be negative, got {line}."
+            )
+        self._line = line
 
     def _get_raw(
         self, entry_name: Text, entry_lines: Sequence[Text]  # noqa: ARG002
