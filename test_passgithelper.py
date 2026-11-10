@@ -476,6 +476,13 @@ class TestSkippingDataExtractor:
         extractor = self.ExtractorImplementation(10)
         assert extractor.get_value("foo", ["testthis"]) == ""
 
+    def test_negative_skip_rejected(self) -> None:
+        extractor = passgithelper.SpecificLineExtractor(0, 0)
+        config = configparser.ConfigParser()
+        config.read_string("[test]\nskip = -2\n")
+        with pytest.raises(ValueError, match="must not be negative"):
+            extractor.configure(config["test"])
+
 
 class TestSpecificLineExtractor:
     def test_smoke(self) -> None:
@@ -487,6 +494,13 @@ class TestSpecificLineExtractor:
     def test_no_such_line(self) -> None:
         extractor = passgithelper.SpecificLineExtractor(3, 6)
         assert extractor.get_value("foo", ["line 1", "user: bar", "more lines"]) is None
+
+    def test_negative_line_rejected(self) -> None:
+        extractor = passgithelper.SpecificLineExtractor(0, 0)
+        config = configparser.ConfigParser()
+        config.read_string("[test]\nline = -1\n")
+        with pytest.raises(ValueError, match="must not be negative"):
+            extractor.configure(config["test"])
 
 
 class TestRegexSearchExtractor:
